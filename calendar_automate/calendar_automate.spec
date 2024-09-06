@@ -1,12 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
 block_cipher = None
 
+# Get the absolute path of the current directory
+current_dir = os.path.dirname(os.path.abspath(SPEC))
+
 a = Analysis(['calendar_automate.py'],
-             pathex=['C:\\Users\\gain\\git\\python\\tasks_automation\\calendar_automate'],
+             pathex=[current_dir],
              binaries=[],
-             datas=[('calendar-automate-srvc-account-ref-file.json', '.'),
-                    ('calendar_api_properties', 'calendar_api_properties')],
+             datas=[
+                 (os.path.join(current_dir, 'calendar-automate-srvc-account-ref-file.json'), '.'),
+                 (os.path.join(current_dir, 'calendar_api_properties'), 'calendar_api_properties')
+             ],
              hiddenimports=[],
              hookspath=[],
              hooksconfig={},
@@ -33,4 +40,15 @@ exe = EXE(pyz,
           upx=True,
           upx_exclude=[],
           runtime_tmpdir=None,
-          console=True )
+          console=True,
+          icon=os.path.join(current_dir, 'calendar_icon.ico'))
+
+# Collect all files in one directory
+coll = COLLECT(exe,
+               a.binaries,
+               a.zipfiles,
+               a.datas,
+               strip=False,
+               upx=True,
+               upx_exclude=[],
+               name='calendar_automate')
