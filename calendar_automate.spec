@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
 block_cipher = None
 
-a = Analysis(['calendar_automate.py'],
-             pathex=[],
+a = Analysis(['calendar_automate\\calendar_automate.py'],
+             pathex=[os.path.abspath('calendar_automate')],
              binaries=[],
              datas=[],
              hiddenimports=['win32com.client'],
@@ -35,4 +37,5 @@ exe = EXE(pyz,
           disable_windowed_traceback=False,
           target_arch=None,
           codesign_identity=None,
-          entitlements_file=None )
+          entitlements_file=None,
+          distpath=os.path.abspath('calendar_automate\\dist'))
