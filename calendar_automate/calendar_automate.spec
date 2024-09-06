@@ -2,11 +2,17 @@
 
 import os
 import sys
+import shutil
 
 block_cipher = None
 
 # Get the absolute path of the spec file's directory
 spec_dir = os.path.dirname(os.path.abspath(SPEC))
+
+# Clean the output directory
+output_dir = os.path.join(spec_dir, 'dist', 'calendar_automate')
+if os.path.exists(output_dir):
+    shutil.rmtree(output_dir)
 
 a = Analysis(
     [os.path.join(spec_dir, 'calendar_automate.py')],
