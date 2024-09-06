@@ -93,10 +93,11 @@ def extract_event_details(image_path):
     try:
         base64_image = encode_image(image_path)
         
-        with open('calendar_api_properties.properties', 'r') as f:
+        properties_path = os.path.join('property_files', 'calendar_api_properties.properties')
+        with open(properties_path, 'r') as f:
             properties = dict(line.strip().split('=') for line in f if '=' in line)
         api_key = properties.get('ANTHROPIC_API_KEY')
-        print(f"Using Anthropic API key from calendar_api_properties.properties")
+        print(f"Using Anthropic API key from {properties_path}")
         client = anthropic.Anthropic(api_key=api_key)
         
         message = client.messages.create(
