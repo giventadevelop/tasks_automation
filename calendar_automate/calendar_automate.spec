@@ -7,7 +7,7 @@ a = Analysis(
     binaries=[],
      datas=[('property_files/calendar-automate-srvc-account-ref-file.json', 'property_files'),
            ('property_files/calendar_api_properties.properties', 'property_files')],
-    hiddenimports=[],
+    hiddenimports=['google.auth', 'google.auth.transport.requests', 'google.oauth2.credentials', 'google_auth_oauthlib.flow', 'googleapiclient.discovery'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
