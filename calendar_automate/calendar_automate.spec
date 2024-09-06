@@ -44,6 +44,8 @@ a = Analysis(
         'rsa',
         'six',
         'uritemplate',
+        'setuptools',
+        'pkg_resources',
     ],
     hookspath=[],
     hooksconfig={},
