@@ -22,7 +22,6 @@ a = Analysis(
         (os.path.join(spec_dir, 'calendar-automate-srvc-account-ref-file.json'), '.'),
         (os.path.join(spec_dir, 'calendar_api_properties'), 'calendar_api_properties'),
     ],
-    binaries=[],
     hiddenimports=[
         'google.auth',
         'google.auth.transport',
