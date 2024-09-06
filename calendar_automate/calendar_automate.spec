@@ -22,7 +22,14 @@ a = Analysis(
         (os.path.join(spec_dir, 'calendar-automate-srvc-account-ref-file.json'), 'calendar-automate-srvc-account-ref-file.json'),
         (os.path.join(spec_dir, 'calendar_api_properties'), 'calendar_api_properties')
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        'google.auth',
+        'google.auth.transport',
+        'google.auth.transport.requests',
+        'google.oauth2.credentials',
+        'googleapiclient.discovery',
+        'googleapiclient.http',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
