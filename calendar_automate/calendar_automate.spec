@@ -3,10 +3,10 @@
 block_cipher = None
 
 a = Analysis(['calendar_automate.py'],
-             pathex=[],
+             pathex=['C:\\Users\\gain\\git\\python\\tasks_automation\\calendar_automate'],
              binaries=[],
              datas=[('calendar-automate-srvc-account-ref-file.json', '.'),
-                    ('calendar_api_properties', '.')],
+                    ('calendar_api_properties', 'calendar_api_properties')],
              hiddenimports=[],
              hookspath=[],
              hooksconfig={},
@@ -21,21 +21,16 @@ pyz = PYZ(a.pure, a.zipped_data,
              cipher=block_cipher)
 
 exe = EXE(pyz,
-          a.scripts, 
+          a.scripts,
+          a.binaries,
+          a.zipfiles,
+          a.datas,
           [],
-          exclude_binaries=True,
           name='calendar_automate',
           debug=False,
           bootloader_ignore_signals=False,
           strip=False,
           upx=True,
+          upx_exclude=[],
+          runtime_tmpdir=None,
           console=True )
-
-coll = COLLECT(exe,
-               a.binaries,
-               a.zipfiles,
-               a.datas, 
-               strip=False,
-               upx=True,
-               upx_exclude=[],
-               name='calendar_automate')
