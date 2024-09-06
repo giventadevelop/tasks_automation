@@ -1,16 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 
 block_cipher = None
 
+# Get the absolute path of the spec file's directory
+spec_dir = os.path.dirname(os.path.abspath(SPEC))
+
 a = Analysis(
-    ['calendar_automate.py'],
-    pathex=[os.path.dirname(os.path.abspath(SPEC))],
+    [os.path.join(spec_dir, 'calendar_automate.py')],
+    pathex=[spec_dir],
     binaries=[],
     datas=[
-        ('calendar-automate-srvc-account-ref-file.json', '.'),
-        ('calendar_api_properties', 'calendar_api_properties')
+        (os.path.join(spec_dir, 'calendar-automate-srvc-account-ref-file.json'), '.'),
+        (os.path.join(spec_dir, 'calendar_api_properties'), 'calendar_api_properties')
     ],
     hiddenimports=[],
     hookspath=[],
@@ -22,6 +26,15 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Add data files from calendar_api_properties directory
+calendar_api_properties_dir = os.path.join(spec_dir, 'calendar_api_properties')
+for root, dirs, files in os.walk(calendar_api_properties_dir):
+    for file in files:
+        file_path = os.path.join(root, file)
+        rel_dir = os.path.relpath(root, calendar_api_properties_dir)
+        a.datas += [(os.path.join('calendar_api_properties', rel_dir, file), file_path, 'DATA')]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -40,7 +53,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='calendar_icon.ico',
+    icon=os.path.join(spec_dir, 'calendar_icon.ico'),
 )
 
 coll = COLLECT(
