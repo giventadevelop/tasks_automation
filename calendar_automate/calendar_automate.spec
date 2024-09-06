@@ -46,6 +46,8 @@ a = Analysis(
         'uritemplate',
         'setuptools',
         'pkg_resources',
+        'importlib_resources',
+        'importlib_resources.trees',
     ],
     hookspath=[],
     hooksconfig={},
