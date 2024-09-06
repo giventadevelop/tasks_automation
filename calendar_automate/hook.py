@@ -1,17 +1,15 @@
 import os
 
-def print_cwd_contents():
+def print_file_locations():
     print("Current working directory:", os.getcwd())
-    print("Contents of current directory:")
-    for item in os.listdir():
-        print(item)
     
-    property_files_dir = os.path.join(os.getcwd(), 'property_files')
-    if os.path.exists(property_files_dir):
-        print("\nContents of property_files directory:")
-        for item in os.listdir(property_files_dir):
-            print(item)
-    else:
-        print("\nproperty_files directory not found")
+    service_account_file = 'calendar-automate-srvc-account-ref-file.json'
+    properties_file = 'calendar_api_properties.properties'
+    
+    for file in [service_account_file, properties_file]:
+        if os.path.exists(file):
+            print(f"{file} found in the current directory")
+        else:
+            print(f"{file} not found in the current directory")
 
-print_cwd_contents()
+print_file_locations()
