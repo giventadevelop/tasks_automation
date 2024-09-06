@@ -13,21 +13,25 @@ import anthropic
 import logging
 import tkinter as tk
 from tkinter import filedialog
-from dotenv import load_dotenv
+from jproperties import Properties
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# Load environment variables from .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
-print(f"Loaded .env file from: {os.path.join(os.path.dirname(__file__), '.env')}")
-
 # Define the scopes
 SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/drive.file']
 
+# Read the properties file
+properties = Properties()
+properties_path = os.path.join('property_files', 'calendar_api_properties.properties')
+with open(properties_path, 'rb') as config_file:
+    properties.load(config_file)
+
+# Get the service account file path from the properties file
+service_account_file = os.path.join('property_files', properties.get('SERVICE_ACCOUNT_FILE').data)
+
 # Load credentials from the service account file
-service_account_file = 'calendar-automate-srvc-account-ref-file.json'
 credentials = service_account.Credentials.from_service_account_file(
     service_account_file, scopes=SCOPES)
 
