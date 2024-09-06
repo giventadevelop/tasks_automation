@@ -36,7 +36,7 @@ except Exception as e:
     sys.exit(1)
 
 # Get the service account file path from the properties file
-service_account_file = os.path.join('property_files', properties.get('SERVICE_ACCOUNT_FILE', 'calendar-automate-srvc-account-ref-file.json').data)
+service_account_file = os.path.join('property_files', properties.get('SERVICE_ACCOUNT_FILE', 'calendar-automate-srvc-account-ref-file.json'))
 
 # Load credentials from the service account file
 credentials = service_account.Credentials.from_service_account_file(
