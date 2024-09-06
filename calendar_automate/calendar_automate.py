@@ -25,11 +25,18 @@ SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.co
 # Read the properties file
 properties = Properties()
 properties_path = os.path.join('property_files', 'calendar_api_properties.properties')
-with open(properties_path, 'rb') as config_file:
-    properties.load(config_file)
+try:
+    with open(properties_path, 'rb') as config_file:
+        properties.load(config_file)
+except FileNotFoundError:
+    print(f"Error: Properties file not found at {properties_path}")
+    sys.exit(1)
+except Exception as e:
+    print(f"Error reading properties file: {str(e)}")
+    sys.exit(1)
 
 # Get the service account file path from the properties file
-service_account_file = os.path.join('property_files', properties.get('SERVICE_ACCOUNT_FILE').data)
+service_account_file = os.path.join('property_files', properties.get('SERVICE_ACCOUNT_FILE', 'calendar-automate-srvc-account-ref-file.json').data)
 
 # Load credentials from the service account file
 credentials = service_account.Credentials.from_service_account_file(
