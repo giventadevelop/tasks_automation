@@ -22,9 +22,15 @@ from googleapiclient.http import MediaFileUpload
 # Define the scopes
 SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/drive.file']
 
+# Determine the base path
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.abspath(".")
+
 # Read the properties file
 properties = Properties()
-properties_path = os.path.join('property_files', 'calendar_api_properties.properties')
+properties_path = os.path.join(base_path, 'property_files', 'calendar_api_properties.properties')
 try:
     with open(properties_path, 'rb') as config_file:
         properties.load(config_file)
@@ -36,7 +42,7 @@ except Exception as e:
     sys.exit(1)
 
 # Get the service account file path from the properties file
-service_account_file = os.path.join('property_files', properties.get('SERVICE_ACCOUNT_FILE', 'calendar-automate-srvc-account-ref-file.json'))
+service_account_file = os.path.join(base_path, 'property_files', properties.get('SERVICE_ACCOUNT_FILE', 'calendar-automate-srvc-account-ref-file.json'))
 
 # Load credentials from the service account file
 credentials = service_account.Credentials.from_service_account_file(
@@ -93,7 +99,12 @@ def extract_event_details(image_path):
     try:
         base64_image = encode_image(image_path)
         
-        properties_path = os.path.join('property_files', 'calendar_api_properties.properties')
+        if getattr(sys, 'frozen', False):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(".")
+        
+        properties_path = os.path.join(base_path, 'property_files', 'calendar_api_properties.properties')
         with open(properties_path, 'r') as f:
             properties = dict(line.strip().split('=') for line in f if '=' in line)
         api_key = properties.get('ANTHROPIC_API_KEY')
