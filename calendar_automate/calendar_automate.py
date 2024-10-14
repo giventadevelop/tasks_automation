@@ -108,8 +108,6 @@ def get_event_input():
         print(f"Selected file: {image_path}")
         return "image", None, image_path
 
-input_type, event_text, image_path = get_event_input()
-
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
