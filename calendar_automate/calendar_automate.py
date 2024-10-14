@@ -168,25 +168,27 @@ def extract_event_details(input_type, event_text, image_path):
                     }
                 ]
             )
+            result = message.content[0].text
+            event_details = json.loads(result)
         else:  # input_type == "text"
-            message = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"Please extract the following information from the supplied text: event name, date, time, venue, and contacts. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields. Here's the text: {event_text}"
-                            }
-                        ]
-                    }
-                ]
-            )
-        
-        result = message.content[0].text
-        event_details = json.loads(result)
+            # For text input, we'll parse it manually
+            event_details = {}
+            words = event_text.split()
+            event_details['event_name'] = ' '.join(words[:2])  # Assume first two words are the event name
+            
+            # Find date and time
+            date_time = ' '.join(words[2:])
+            try:
+                event_datetime = datetime.strptime(date_time, '%A %B %d %Y %I:%M %p')
+            except ValueError:
+                try:
+                    event_datetime = datetime.strptime(date_time, '%B %d %Y %I:%M %p')
+                except ValueError:
+                    event_datetime = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+                    logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
+            
+            event_details['date'] = event_datetime.strftime('%Y-%m-%d')
+            event_details['time'] = event_datetime.strftime('%I:%M %p')
         
         logging.info(f"Extracted event details: {event_details}")
         
@@ -195,14 +197,7 @@ def extract_event_details(input_type, event_text, image_path):
         try:
             event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
         except ValueError:
-            try:
-                # Try parsing just the date if time is not available
-                event_date = datetime.strptime(event_details.get('date', ''), '%Y-%m-%d')
-                # Set default time to 10:00 AM
-                event_datetime = event_date.replace(hour=10, minute=0)
-            except ValueError:
-                # If parsing fails, set to current date at 10:00 AM
-                event_datetime = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+            event_datetime = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
             logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
 
         # If the year is in the past, set it to the current year
@@ -210,7 +205,7 @@ def extract_event_details(input_type, event_text, image_path):
         if event_datetime.year < current_year:
             event_datetime = event_datetime.replace(year=current_year)
         
-        event_name = event_details.get('event_name') or event_details.get('eventName', 'Unnamed Event')
+        event_name = event_details.get('event_name', 'Unnamed Event')
         venue = event_details.get('venue', 'No venue specified')
         contacts = event_details.get('contacts', [])
         contact_list = [f"{contact['name']} - {contact['phone']}" for contact in contacts]
