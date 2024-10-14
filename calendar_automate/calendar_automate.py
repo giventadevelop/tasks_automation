@@ -218,6 +218,7 @@ def extract_event_details(input_type, event_text, image_path):
         raise
 
 def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=None):
+    logging.info(f"Creating calendar event with name: {event_name}")
     contacts_str = "\n".join(contact_list)
     description = f"""
 Event: {event_name}
@@ -229,6 +230,7 @@ Contacts:
 """
     # Create the new event title with event name first, followed by year, month name, day of the month, and weekday
     event_title = f"{event_name} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
+    logging.info(f"Event title: {event_title}")
     
     event = {
         'summary': event_title,
