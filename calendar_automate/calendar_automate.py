@@ -82,7 +82,22 @@ def get_event_input():
     choice = messagebox.askquestion("Input Method", "Do you want to enter event details as text?")
     
     if choice == 'yes':
-        event_text = simpledialog.askstring("Event Details", "Enter event details:")
+        dialog = tk.Toplevel()
+        dialog.title("Event Details")
+        text_area = tk.Text(dialog, width=60, height=20)
+        text_area.pack(padx=10, pady=10)
+        
+        def on_ok():
+            nonlocal event_text
+            event_text = text_area.get("1.0", tk.END).strip()
+            dialog.destroy()
+        
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
+        ok_button.pack(pady=10)
+        
+        dialog.geometry("500x650")
+        dialog.wait_window()
+        
         if not event_text:
             print("No event details entered. Exiting.")
             sys.exit(1)
@@ -177,30 +192,21 @@ def extract_event_details(input_type, event_text, image_path):
         date_time_str = f"{event_details.get('date', '')} {event_details.get('time', '')}"
         try:
             event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
-            # If the year is in the past, set it to the current year
-            current_year = datetime.now().year
-            if event_datetime.year < current_year:
-                event_datetime = event_datetime.replace(year=current_year)
         except ValueError:
-            logging.warning(f"Failed to parse date and time: {date_time_str}")
-            # If parsing fails, ask the API to correct the format
-            correction_message = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"Please convert this date and time '{date_time_str}' to the format 'YYYY-MM-DD HH:MM AM/PM'. If the year is not present or is in the past, use the current year. Only respond with the formatted date and time, nothing else."
-                    }
-                ]
-            )
-            corrected_date_time = correction_message.content[0].text.strip()
-            logging.info(f"Corrected date and time: {corrected_date_time}")
-            event_datetime = datetime.strptime(corrected_date_time, '%Y-%m-%d %I:%M %p')
-            # Double-check if the year is still in the past after correction
-            current_year = datetime.now().year
-            if event_datetime.year < current_year:
-                event_datetime = event_datetime.replace(year=current_year)
+            try:
+                # Try parsing just the date if time is not available
+                event_date = datetime.strptime(event_details.get('date', ''), '%Y-%m-%d')
+                # Set default time to 10:00 AM
+                event_datetime = event_date.replace(hour=10, minute=0)
+            except ValueError:
+                # If parsing fails, set to current date at 10:00 AM
+                event_datetime = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+            logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
+
+        # If the year is in the past, set it to the current year
+        current_year = datetime.now().year
+        if event_datetime.year < current_year:
+            event_datetime = event_datetime.replace(year=current_year)
         
         event_name = event_details.get('event_name') or event_details.get('eventName', 'Unnamed Event')
         venue = event_details.get('venue', 'No venue specified')
@@ -236,7 +242,7 @@ Contacts:
             'timeZone': 'America/New_York',
         },
         'end': {
-            'dateTime': (event_datetime + timedelta(hours=2)).isoformat(),  # Assuming 2-hour duration
+            'dateTime': event_datetime.isoformat(),  # Same as start time
             'timeZone': 'America/New_York',
         },
         'reminders': {
