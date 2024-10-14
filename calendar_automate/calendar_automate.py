@@ -12,7 +12,7 @@ from googleapiclient.discovery import build
 import anthropic
 import logging
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog, messagebox
 from jproperties import Properties
 
 from google.oauth2 import service_account
@@ -75,30 +75,47 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Anthropic API key will be read from .env file at runtime
 
-# Create a root window and hide it
-root = tk.Tk()
-root.withdraw()
+def get_event_input():
+    root = tk.Tk()
+    root.withdraw()
 
-# Open file dialog to select the image file
-image_path = filedialog.askopenfilename(
-    title="Select Image File",
-    filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
-)
+    choice = messagebox.askquestion("Input Method", "Do you want to enter event details as text?")
+    
+    if choice == 'yes':
+        event_text = simpledialog.askstring("Event Details", "Enter event details:")
+        if not event_text:
+            print("No event details entered. Exiting.")
+            sys.exit(1)
+        
+        image_choice = messagebox.askquestion("Image Upload", "Do you want to upload an image for this event?")
+        image_path = None
+        if image_choice == 'yes':
+            image_path = filedialog.askopenfilename(
+                title="Select Image File",
+                filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
+            )
+        
+        return "text", event_text, image_path
+    else:
+        image_path = filedialog.askopenfilename(
+            title="Select Image File",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
+        )
+        if not image_path:
+            print("No file selected. Exiting.")
+            sys.exit(1)
+        
+        print(f"Selected file: {image_path}")
+        return "image", None, image_path
 
-if not image_path:
-    print("No file selected. Exiting.")
-    sys.exit(1)
-
-print(f"Selected file: {image_path}")
+input_type, event_text, image_path = get_event_input()
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-def extract_event_details(image_path):
+def extract_event_details(input_type, event_text, image_path):
     try:
-        base64_image = encode_image(image_path)
-        
         if getattr(sys, 'frozen', False):
             base_path = sys._MEIPASS
         else:
@@ -111,29 +128,47 @@ def extract_event_details(image_path):
         print(f"Using Anthropic API key from {properties_path}")
         client = anthropic.Anthropic(api_key=api_key)
         
-        message = client.messages.create(
-            model="claude-3-opus-20240229",
-            max_tokens=1000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Please extract the following information from this image: event name, date, time, venue, and contacts. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields."
-                        },
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/jpeg",
-                                "data": base64_image
+        if input_type == "image":
+            base64_image = encode_image(image_path)
+            message = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Please extract the following information from this image: event name, date, time, venue, and contacts. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields."
+                            },
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": base64_image
+                                }
                             }
-                        }
-                    ]
-                }
-            ]
-        )
+                        ]
+                    }
+                ]
+            )
+        else:  # input_type == "text"
+            message = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"Please extract the following information from the supplied text: event name, date, time, venue, and contacts. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields. Here's the text: {event_text}"
+                            }
+                        ]
+                    }
+                ]
+            )
         
         result = message.content[0].text
         event_details = json.loads(result)
@@ -293,11 +328,13 @@ def get_or_create_folder(drive_service, folder_name):
         return folder['id']
 
 def main():
+    # Get user input
+    input_type, event_text, image_path = get_event_input()
+
     # Extract event details
-    event_name, event_datetime, venue, contact_list = extract_event_details(image_path)
+    event_name, event_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
     
-    # Print the image path for confirmation
-    print(f"Using image file: {image_path}")
+    # Print the extracted details for confirmation
     print(f"Extracted Event: {event_name}")
     print(f"Date and Time: {event_datetime}")
     print(f"Venue: {venue}")
@@ -310,6 +347,11 @@ def main():
     # Create calendar event using service account
     print("\nCreating calendar event:")
     create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=image_path)
+
+    # Show success message
+    root = tk.Tk()
+    root.withdraw()
+    messagebox.showinfo("Success", "Calendar entry added successfully!")
 
 if __name__ == '__main__':
     main()
