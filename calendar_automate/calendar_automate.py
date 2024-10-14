@@ -205,7 +205,7 @@ def extract_event_details(input_type, event_text, image_path):
         if event_datetime.year < current_year:
             event_datetime = event_datetime.replace(year=current_year)
         
-        event_name = event_details.get('event_name', 'Unnamed Event')
+        event_name = event_details.get('eventName', 'Unnamed Event')
         venue = event_details.get('venue', 'No venue specified')
         contacts = event_details.get('contacts', [])
         contact_list = [f"{contact['name']} - {contact['phone']}" for contact in contacts]

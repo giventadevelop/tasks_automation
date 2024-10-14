@@ -3,12 +3,10 @@
 
 a = Analysis(
     ['calendar_automate.py'],
-    pathex=[],
+    pathex=['C:/Users/gain/git/python/tasks_automation/calendar_automate'],
     binaries=[],
-     datas=[('property_files/calendar-automate-srvc-account-ref-file.json', 'property_files'),
-           ('property_files/calendar_api_properties.properties', 'property_files'),
-           ('hook.py', '.')],
-    hiddenimports=['google.auth', 'google.auth.transport.requests', 'google.oauth2.credentials', 'google_auth_oauthlib.flow', 'googleapiclient.discovery'],
+    datas=[('C:/Users/gain/git/python/tasks_automation/calendar_automate/property_files/calendar-automate-srvc-account-ref-file.json','property_files'), ('C:/Users/gain/git/python/tasks_automation/calendar_automate/property_files/calendar_api_properties.properties','property_files')],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
