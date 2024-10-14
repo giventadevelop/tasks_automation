@@ -87,6 +87,8 @@ def get_event_input():
         text_area = tk.Text(dialog, width=60, height=20)
         text_area.pack(padx=10, pady=10)
         
+        event_text = ""
+        
         def on_ok():
             nonlocal event_text
             event_text = text_area.get("1.0", tk.END).strip()
