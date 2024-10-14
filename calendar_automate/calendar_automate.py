@@ -143,6 +143,8 @@ def extract_event_details(input_type, event_text, image_path):
         print(f"Using Anthropic API key from {properties_path}")
         client = anthropic.Anthropic(api_key=api_key)
         
+        prompt = "Please extract the following information from this {}: event name, date, time, venue, and contacts. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields."
+        
         if input_type == "image":
             base64_image = encode_image(image_path)
             message = client.messages.create(
@@ -154,7 +156,7 @@ def extract_event_details(input_type, event_text, image_path):
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Please extract the following information from this image: event name, date, time, venue, and contacts. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields."
+                                "text": prompt.format("image")
                             },
                             {
                                 "type": "image",
@@ -168,27 +170,25 @@ def extract_event_details(input_type, event_text, image_path):
                     }
                 ]
             )
-            result = message.content[0].text
-            event_details = json.loads(result)
         else:  # input_type == "text"
-            # For text input, we'll parse it manually
-            event_details = {}
-            words = event_text.split()
-            event_details['event_name'] = ' '.join(words[:2])  # Assume first two words are the event name
-            
-            # Find date and time
-            date_time = ' '.join(words[2:])
-            try:
-                event_datetime = datetime.strptime(date_time, '%A %B %d %Y %I:%M %p')
-            except ValueError:
-                try:
-                    event_datetime = datetime.strptime(date_time, '%B %d %Y %I:%M %p')
-                except ValueError:
-                    event_datetime = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
-                    logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
-            
-            event_details['date'] = event_datetime.strftime('%Y-%m-%d')
-            event_details['time'] = event_datetime.strftime('%I:%M %p')
+            message = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt.format("text") + "\n\n" + event_text
+                            }
+                        ]
+                    }
+                ]
+            )
+        
+        result = message.content[0].text
+        event_details = json.loads(result)
         
         logging.info(f"Extracted event details: {event_details}")
         
