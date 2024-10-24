@@ -193,11 +193,15 @@ def extract_event_details(input_type, event_text, image_path):
         logging.info(f"Extracted event details: {event_details}")
         
         # Parse date and time
-        date_time_str = f"{event_details.get('date', '')} {event_details.get('time', '')}"
+        date = event_details.get('date', '')
+        time = event_details.get('time')
+        if time is None:
+            time = '10:30 AM'
+        date_time_str = f"{date} {time}"
         try:
             event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
         except ValueError:
-            event_datetime = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+            event_datetime = datetime.now().replace(hour=10, minute=30, second=0, microsecond=0)
             logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
 
         # If the year is in the past, set it to the current year
@@ -206,7 +210,9 @@ def extract_event_details(input_type, event_text, image_path):
             event_datetime = event_datetime.replace(year=current_year)
         
         event_name = event_details.get('eventName', 'Unnamed Event')
-        venue = event_details.get('venue', 'No venue specified')
+        venue = event_details.get('venue')
+        if venue is None:
+            venue = '@home_default'
         contacts = event_details.get('contacts', [])
         contact_list = [f"{contact['name']} - {contact['phone']}" for contact in contacts]
         
