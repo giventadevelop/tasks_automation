@@ -327,7 +327,7 @@ def extract_event_details(input_type, event_text, image_path):
     wait=wait_exponential(multiplier=2, min=4, max=30),
     reraise=True
 )
-def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list,
+def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, event_end_datetime, venue, contact_list,
                           file_path=None):
     try:
         logging.info(f"Creating calendar event with name: {event_name}")
@@ -474,7 +474,7 @@ def main():
 
         # Create calendar event using service account
         print("\nCreating calendar event:")
-        create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list,
+        create_calendar_event(calendar_service, drive_service, event_name, event_datetime, event_end_datetime, venue, contact_list,
                               file_path=image_path)
 
         # Show success message
