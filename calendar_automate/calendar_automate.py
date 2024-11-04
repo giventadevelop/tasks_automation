@@ -188,7 +188,31 @@ def extract_event_details(input_type, event_text, image_path):
         print(f"Using Anthropic API key from {properties_path}")
         client = anthropic.Anthropic(api_key=api_key)
 
-        prompt = "Please extract the following information from this {}: event name, date, time, venue, and contacts. iF there is no year sypplied default it as current year. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields."
+        prompt = """Please extract the following information from this {}: event name, date, time, venue, and contacts. If there is no year supplied, default it as the current year. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields.
+
+        The response should be in this JSON format and fields:
+        {
+            "eventName": "Art & Literature Festival",
+            "date": "2023-11-16",
+            "startTime": "09:30 AM",
+            "endTime": "09:00 PM",
+            "venue": "Dragonetti Auditorium, Randolph, NJ",
+            "contacts": [
+                {
+                    "name": "Jayadevan",
+                    "phone": "862-452-7595"
+                },
+                {
+                    "name": "Shruthi",
+                    "phone": "862-437-7092"
+                },
+                {
+                    "name": "Gopakumar",
+                    "phone": "609-256-1726"
+                }
+            ]
+        }
+        If there are no values for the sample JSON fields provided, please put empty strings or default values."""
 
         if input_type == "image":
             base64_image = encode_image(image_path)
