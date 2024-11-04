@@ -440,12 +440,8 @@ Contacts:
         day_before = event_datetime - timedelta(days=1)
         day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
 
+        # Create reminders for each date
         for reminder_date in [week_before, day_before, day_of_event_9am]:
-            # Ensure reminder start time is not in the past
-            # if reminder_date <= datetime.now():
-            #     logging.warning(f"Skipping reminder for {reminder_date} as it's in the past")
-            #     continue
-                
             reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
             reminder_start = reminder_date.replace(microsecond=0)
             reminder_end = reminder_start + timedelta(minutes=30)
@@ -466,6 +462,20 @@ Contacts:
                     'useDefault': True,
                 },
             }
+
+            if file_attachment:
+                reminder_event['attachments'] = [file_attachment]
+
+            try:
+                calendar_service.events().insert(
+                    calendarId='giventauser@gmail.com',
+                    body=reminder_event,
+                    supportsAttachments=True
+                ).execute()
+                print(f'Reminder event created for {reminder_date.strftime("%Y-%m-%d %I:%M %p")}: {reminder_title}')
+            except Exception as e:
+                logging.warning(f"Failed to create reminder for {reminder_date}: {str(e)}")
+                continue
         if file_attachment:
             reminder_event['attachments'] = [file_attachment]
 
