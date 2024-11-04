@@ -297,41 +297,41 @@ def extract_event_details(input_type, event_text, image_path):
         try:
             start_time = None
             end_time = None
-                
-                # Try to get time from different possible fields
-                time_value = None
-                for time_field in ['startTime', 'timeStart', 'start', 'endTime', 'timeEnd', 'end', 'time']:
-                    if time_field in event_details:
-                        time_value = event_details[time_field]
-                        logging.info(f"Found time in field: {time_field}")
-                        break
-                
-                if time_value is None:
-                    # Default to 9:30 AM if no time found
-                    time_value = "9:30 AM"
-                    logging.info("No time found in event details, using default time: 9:30 AM")
+            
+            # Try to get time from different possible fields
+            time_value = None
+            for time_field in ['startTime', 'timeStart', 'start', 'endTime', 'timeEnd', 'end', 'time']:
+                if time_field in event_details:
+                    time_value = event_details[time_field]
+                    logging.info(f"Found time in field: {time_field}")
+                    break
+            
+            if time_value is None:
+                # Default to 9:30 AM if no time found
+                time_value = "9:30 AM"
+                logging.info("No time found in event details, using default time: 9:30 AM")
 
-                # Parse the time
-                start_date_str = f"{date} {time_value}"
-                for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
-                    try:
-                        event_datetime = datetime.strptime(start_date_str, fmt)
-                        break
-                    except ValueError:
-                        continue
-                else:
-                    # If parsing fails, use default time
-                    event_datetime = datetime.strptime(f"{date} 9:30 AM", '%Y-%m-%d %I:%M %p')
-                    logging.warning("Failed to parse time. Using default: 9:30 AM")
-
-                # Set end time to 1 hour after start time
-                event_end_datetime = event_datetime + timedelta(hours=1)
-                logging.info(f"Start time: {event_datetime}, End time: {event_end_datetime}")
-                    
-            except (ValueError, KeyError) as e:
-                # Default to 9:30 AM if any parsing fails
+            # Parse the time
+            start_date_str = f"{date} {time_value}"
+            for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
+                try:
+                    event_datetime = datetime.strptime(start_date_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                # If parsing fails, use default time
                 event_datetime = datetime.strptime(f"{date} 9:30 AM", '%Y-%m-%d %I:%M %p')
-                logging.warning(f"Failed to parse time ({str(e)}). Using default: 9:30 AM")
+                logging.warning("Failed to parse time. Using default: 9:30 AM")
+
+            # Set end time to 1 hour after start time
+            event_end_datetime = event_datetime + timedelta(hours=1)
+            logging.info(f"Start time: {event_datetime}, End time: {event_end_datetime}")
+                
+        except (ValueError, KeyError) as e:
+            # Default to 9:30 AM if any parsing fails
+            event_datetime = datetime.strptime(f"{date} 9:30 AM", '%Y-%m-%d %I:%M %p')
+            logging.warning(f"Failed to parse time ({str(e)}). Using default: 9:30 AM")
         except Exception as e:
             logging.error(f"Error processing event details: {str(e)}")
             raise
