@@ -311,6 +311,8 @@ def extract_event_details(input_type, event_text, image_path):
         current_year = datetime.now().year
         if event_datetime.year < current_year:
             event_datetime = event_datetime.replace(year=current_year)
+            event_end_datetime = event_end_datetime.replace(year=current_year)
+
 
         event_name = event_details.get('eventName', 'Unnamed Event')
         venue = event_details.get('venue')
@@ -440,9 +442,9 @@ Contacts:
 
         for reminder_date in [week_before, day_before, day_of_event_9am]:
             # Ensure reminder start time is not in the past
-            if reminder_date <= datetime.now():
-                logging.warning(f"Skipping reminder for {reminder_date} as it's in the past")
-                continue
+            # if reminder_date <= datetime.now():
+            #     logging.warning(f"Skipping reminder for {reminder_date} as it's in the past")
+            #     continue
                 
             reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
             reminder_start = reminder_date.replace(microsecond=0)
