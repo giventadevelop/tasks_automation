@@ -260,17 +260,29 @@ def extract_event_details(input_type, event_text, image_path):
         result = message.content[0].text.strip()
         
         # Find the JSON content within the response
-        json_start = result.find('{')
-        json_end = result.rfind('}') + 1
-        
-        if json_start == -1 or json_end == 0:
-            logging.error("No JSON content found in response")
-            raise ValueError("Invalid response format")
-            
-        json_str = result[json_start:json_end]
-        
         try:
-            event_details = json.loads(json_str)
+            # First try to parse the entire response as JSON
+            event_details = json.loads(result)
+        except json.JSONDecodeError:
+            # If that fails, try to extract JSON from the response
+            json_start = result.find('{')
+            json_end = result.rfind('}') + 1
+            
+            if json_start == -1 or json_end == 0:
+                logging.error("No JSON content found in response")
+                raise ValueError("Invalid response format")
+                
+            json_str = result[json_start:json_end]
+            
+            # Clean up common formatting issues
+            json_str = json_str.replace('\n', '').replace('            ', '').strip()
+            
+            try:
+                event_details = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logging.error(f"Failed to parse JSON after cleanup: {json_str}")
+                logging.error(f"JSON Error: {str(e)}")
+                raise ValueError(f"Could not parse event details: {str(e)}")
         except json.JSONDecodeError as e:
             logging.error(f"Failed to parse JSON: {json_str}")
             logging.error(f"JSON Error: {str(e)}")
