@@ -188,32 +188,19 @@ def extract_event_details(input_type, event_text, image_path):
         print(f"Using Anthropic API key from {properties_path}")
         client = anthropic.Anthropic(api_key=api_key)
 
-        prompt = r"""Please extract the following information from this {}: event name, date, time, venue, and contacts. If there is no year supplied, default it as the current year. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields.
+        prompt = """Please extract the following information from this {}: event name, date, time, venue, and contacts. If there is no year supplied, default it as the current year. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields.
 
-Example JSON format:
-{
-    "eventName": "Art & Literature Festival",
-    "date": "2023-11-16",
-    "startTime": "09:30 AM", 
-    "endTime": "09:00 PM",
-    "venue": "Dragonetti Auditorium, Randolph, NJ",
-    "contacts": [
-        {
-            "name": "Jayadevan",
-            "phone": "862-452-7595"
-        },
-        {
-            "name": "Shruthi", 
-            "phone": "862-437-7092"
-        },
-        {
-            "name": "Gopakumar",
-            "phone": "609-256-1726"
-        }
-    ]
-}
-
-Please return a valid JSON object following this exact format. If any fields are missing from the input, use empty strings or reasonable defaults."""
+Return ONLY a valid JSON object in this exact format, with no additional text:
+{{"eventName": "Example Event Name",
+  "date": "2024-11-04",
+  "startTime": "09:30 AM",
+  "endTime": "10:30 AM", 
+  "venue": "Example Venue",
+  "contacts": [
+    {{"name": "Contact Name",
+      "phone": "123-456-7890"}}
+  ]
+}}"""
 
         if input_type == "image":
             base64_image = encode_image(image_path)
