@@ -305,7 +305,7 @@ def extract_event_details(input_type, event_text, image_path):
 
         logging.info(f"Extracted event: {event_name}, Date: {event_datetime}, Venue: {venue}, Contacts: {contact_list}")
 
-        return event_name, event_datetime, venue, contact_list
+        return event_name, event_datetime, event_end_datetime, venue, contact_list
     except json.JSONDecodeError as e:
         logging.error(f"Failed to parse JSON response: {str(e)}")
         root = tk.Tk()
@@ -460,7 +460,7 @@ def main():
         input_type, event_text, image_path = get_event_input()
 
         # Extract event details
-        event_name, event_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
+        event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
 
         # Print the extracted details for confirmation
         print(f"Extracted Event: {event_name}")
