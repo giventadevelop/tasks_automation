@@ -331,31 +331,31 @@ Contacts:
         }
 
         file_attachment = None
-    if file_path:
-        folder_name = 'GAIN_SHARED_API'
-        folder_id = get_or_create_folder(drive_service, folder_name)
+        if file_path:
+            folder_name = 'GAIN_SHARED_API'
+            folder_id = get_or_create_folder(drive_service, folder_name)
 
-        file_metadata = {
-            'name': os.path.basename(file_path),
-            'parents': [folder_id]
-        }
-        media = MediaFileUpload(file_path, resumable=True)
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+            file_metadata = {
+                'name': os.path.basename(file_path),
+                'parents': [folder_id]
+            }
+            media = MediaFileUpload(file_path, resumable=True)
+            file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
 
-        # Set file permissions to "Anyone with the link can view"
-        permission = {
-            'type': 'anyone',
-            'role': 'reader',
-            'allowFileDiscovery': False
-        }
-        drive_service.permissions().create(fileId=file['id'], body=permission).execute()
+            # Set file permissions to "Anyone with the link can view"
+            permission = {
+                'type': 'anyone',
+                'role': 'reader',
+                'allowFileDiscovery': False
+            }
+            drive_service.permissions().create(fileId=file['id'], body=permission).execute()
 
-        file_attachment = {
-            'fileUrl': file['webViewLink'],
-            'title': os.path.basename(file_path),
-            'mimeType': 'application/octet-stream'
-        }
-        event['attachments'] = [file_attachment]
+            file_attachment = {
+                'fileUrl': file['webViewLink'],
+                'title': os.path.basename(file_path),
+                'mimeType': 'application/octet-stream'
+            }
+            event['attachments'] = [file_attachment]
 
         event = calendar_service.events().insert(calendarId='giventauser@gmail.com', body=event,
                                                  supportsAttachments=True).execute()
@@ -391,9 +391,12 @@ Contacts:
                                          supportsAttachments=True).execute()
         print(f'Reminder event created for {reminder_date.strftime("%Y-%m-%d %I:%M %p")}: {reminder_title}')
     except Exception as e:
-    logging.error(f"Error in create_calendar_event: {str(e)}")
-    messagebox.showerror("Error", f"Failed to create calendar event:\n{str(e)}")
-    raise
+        logging.error(f"Error in create_calendar_event: {str(e)}")
+        messagebox.showerror("Error", f"Failed to create calendar event:\n{str(e)}")
+        raise
+    finally:
+        if 'media' in locals():
+            media.close()
 
 
 def get_or_create_folder(drive_service, folder_name):
