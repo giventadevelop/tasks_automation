@@ -244,6 +244,9 @@ def extract_event_details(input_type, event_text, image_path):
             
             try:
                 event_details = json.loads(result)
+                # Check for both possible event name keys
+                event_name = event_details.get('eventName') or event_details.get('event_name', 'Unnamed Event')
+                event_details['eventName'] = event_name  # Normalize to eventName
             except json.JSONDecodeError as e:
                 logging.error(f"Failed to parse JSON: {result}")
                 logging.error(f"JSON Error: {str(e)}")
