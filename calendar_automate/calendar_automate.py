@@ -360,19 +360,19 @@ def main():
         # Extract event details
         event_name, event_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
     
-    # Print the extracted details for confirmation
-    print(f"Extracted Event: {event_name}")
-    print(f"Date and Time: {event_datetime}")
-    print(f"Venue: {venue}")
-    print(f"Contact List: {contact_list}")
+        # Print the extracted details for confirmation
+        print(f"Extracted Event: {event_name}")
+        print(f"Date and Time: {event_datetime}")
+        print(f"Venue: {venue}")
+        print(f"Contact List: {contact_list}")
 
-    # List calendar events using service account
-    print("\nListing calendar events:")
-    list_calendar_events()
+        # List calendar events using service account
+        print("\nListing calendar events:")
+        list_calendar_events()
 
-    # Create calendar event using service account
-    print("\nCreating calendar event:")
-    create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=image_path)
+        # Create calendar event using service account
+        print("\nCreating calendar event:")
+        create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=image_path)
 
         # Show success message
         root = tk.Tk()
