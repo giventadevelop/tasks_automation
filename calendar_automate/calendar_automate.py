@@ -305,7 +305,6 @@ def extract_event_details(input_type, event_text, image_path):
                         'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
                     }
         except json.JSONDecodeError as e:
-            logging.error(f"Failed to parse JSON: {json_str}")
             logging.error(f"JSON Error: {str(e)}")
             # Provide default event details
             event_details = {
