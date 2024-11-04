@@ -56,30 +56,47 @@ credentials = service_account.Credentials.from_service_account_file(
 calendar_service = build('calendar', 'v3', credentials=credentials)
 drive_service = build('drive', 'v3', credentials=credentials)
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=4, max=30),
+    reraise=True
+)
 def list_calendar_events():
     try:
         # Example: List the next 10 events from the primary calendar
         print(" List the next 10 events ...list_calendar_events() .")
+        
+        # Set timeout parameters
         events_result = calendar_service.events().list(
             calendarId='giventauser@gmail.com', 
             maxResults=10, 
             singleEvents=True, 
             orderBy='startTime'
-        ).execute()
+        ).execute(num_retries=3, timeout=30)
+        
         events = events_result.get('items', [])
 
         for event in events:
             start = event['start'].get('dateTime', event['start'].get('date'))
             print(start, event['summary'])
+            
     except HttpError as e:
         logging.error(f"HTTP Error in list_calendar_events: {e}")
-        raise
+        if e.resp.status in [403, 404]:
+            # Handle permission or not found errors
+            messagebox.showerror("Error", "Calendar access error. Please check permissions.")
+            raise
+        else:
+            # Retry other HTTP errors
+            raise
     except (ConnectionError, Timeout) as e:
         logging.error(f"Connection error in list_calendar_events: {e}")
+        messagebox.showerror("Connection Error", 
+            "Failed to connect to Google Calendar. Please check your internet connection.")
         raise
     except Exception as e:
         logging.error(f"Unexpected error in list_calendar_events: {e}")
+        messagebox.showerror("Error", f"An unexpected error occurred:\n{str(e)}")
         raise
 
 def ensure_credentials_file():
@@ -259,8 +276,13 @@ def extract_event_details(input_type, event_text, image_path):
         messagebox.showerror("Error", f"An error occurred while processing the event:\n{str(e)}")
         raise
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=4, max=30),
+    reraise=True
+)
 def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=None):
+    try:
     logging.info(f"Creating calendar event with name: {event_name}")
     contacts_str = "\n".join(contact_list)
     description = f"""
