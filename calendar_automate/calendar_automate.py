@@ -243,25 +243,42 @@ def extract_event_details(input_type, event_text, image_path):
             
             # Try to get time from different possible fields
             try:
+                start_time = None
+                end_time = None
+                
                 if 'startTime' in event_details:
-                    time = event_details['startTime']
-                elif 'endTime' in event_details:
-                    time = event_details['endTime']
+                    start_time = event_details['startTime']
                 elif 'time' in event_details:
-                    time = event_details['time']
+                    start_time = event_details['time']
                 else:
-                    raise ValueError("No time field found")
+                    raise ValueError("No start time found")
 
-                date_time_str = f"{date} {time}"
-                # Try different time formats
+                # Parse start time
+                start_date_str = f"{date} {start_time}"
                 for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
                     try:
-                        event_datetime = datetime.strptime(date_time_str, fmt)
+                        event_datetime = datetime.strptime(start_date_str, fmt)
                         break
                     except ValueError:
                         continue
                 else:
-                    raise ValueError("Could not parse time with any format")
+                    raise ValueError("Could not parse start time with any format")
+
+                # Parse end time if available
+                if 'endTime' in event_details:
+                    end_time = event_details['endTime']
+                    end_date_str = f"{date} {end_time}"
+                    for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
+                        try:
+                            event_end_datetime = datetime.strptime(end_date_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        raise ValueError("Could not parse end time with any format")
+                else:
+                    # Default end time to 1 hour after start if not specified
+                    event_end_datetime = event_datetime + timedelta(hours=1)
                     
             except (ValueError, KeyError) as e:
                 # Default to 9:30 AM if any parsing fails
@@ -317,7 +334,8 @@ def create_calendar_event(calendar_service, drive_service, event_name, event_dat
         contacts_str = "\n".join(contact_list)
         description = f"""
 Event: {event_name}
-Date: {event_datetime.strftime('%Y-%m-%d %I:%M %p')}
+Start Time: {event_datetime.strftime('%Y-%m-%d %I:%M %p')}
+End Time: {event_end_datetime.strftime('%Y-%m-%d %I:%M %p')}
 Venue: {venue}
 
 Contacts:
@@ -336,7 +354,7 @@ Contacts:
                 'timeZone': 'America/New_York',
             },
             'end': {
-                'dateTime': event_datetime.isoformat(),  # Same as start time
+                'dateTime': event_end_datetime.isoformat(),
                 'timeZone': 'America/New_York',
             },
             'reminders': {
