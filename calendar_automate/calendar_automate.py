@@ -283,8 +283,8 @@ def extract_event_details(input_type, event_text, image_path):
 )
 def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=None):
     try:
-    logging.info(f"Creating calendar event with name: {event_name}")
-    contacts_str = "\n".join(contact_list)
+        logging.info(f"Creating calendar event with name: {event_name}")
+        contacts_str = "\n".join(contact_list)
     description = f"""
 Event: {event_name}
 Date: {event_datetime.strftime('%Y-%m-%d %I:%M %p')}
