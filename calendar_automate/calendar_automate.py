@@ -375,16 +375,21 @@ Contacts:
         event_title = f"{event_name} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
         logging.info(f"Event title: {event_title}")
 
+        # Ensure end time is after start time
+        if event_end_datetime <= event_datetime:
+            event_end_datetime = event_datetime + timedelta(hours=1)
+            logging.warning(f"Adjusted end time to be 1 hour after start time: {event_end_datetime}")
+
         event = {
             'summary': event_title,
             'location': venue,
             'description': description,
             'start': {
-                'dateTime': event_datetime.isoformat(),
+                'dateTime': event_datetime.strftime("%Y-%m-%dT%H:%M:%S"),
                 'timeZone': 'America/New_York',
             },
             'end': {
-                'dateTime': event_end_datetime.isoformat(),
+                'dateTime': event_end_datetime.strftime("%Y-%m-%dT%H:%M:%S"),
                 'timeZone': 'America/New_York',
             },
             'reminders': {
@@ -440,16 +445,19 @@ Contacts:
                 continue
                 
             reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
+            reminder_start = reminder_date.replace(microsecond=0)
+            reminder_end = reminder_start + timedelta(minutes=30)
+            
             reminder_event = {
                 'summary': reminder_title,
                 'description': f"Reminder for the upcoming event:\n\n{description}",
                 'location': venue,
                 'start': {
-                    'dateTime': reminder_date.replace(microsecond=0).isoformat(),
+                    'dateTime': reminder_start.strftime("%Y-%m-%dT%H:%M:%S"),
                     'timeZone': 'America/New_York',
                 },
                 'end': {
-                    'dateTime': (reminder_date + timedelta(minutes=30)).replace(microsecond=0).isoformat(),
+                    'dateTime': reminder_end.strftime("%Y-%m-%dT%H:%M:%S"),
                     'timeZone': 'America/New_York',
                 },
                 'reminders': {
