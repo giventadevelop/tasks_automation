@@ -346,13 +346,15 @@ def extract_event_details(input_type, event_text, image_path):
 
             # Parse the time
             start_date_str = f"{date} {time_value}"
+            event_datetime = None
             for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
                 try:
                     event_datetime = datetime.strptime(start_date_str, fmt)
                     break
                 except ValueError:
                     continue
-            else:
+            
+            if event_datetime is None:
                 # If parsing fails, use default time
                 event_datetime = datetime.strptime(f"{date} 9:30 AM", '%Y-%m-%d %I:%M %p')
                 logging.warning("Failed to parse time. Using default: 9:30 AM")
