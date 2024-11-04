@@ -256,32 +256,37 @@ def extract_event_details(input_type, event_text, image_path):
                 ]
             )
 
-        try:
-            result = message.content[0].text
-            # Clean up the response text to ensure it's valid JSON
-            result = result.strip()
-            if result.startswith('```json'):
-                result = result.split('```json')[1]
-            if result.endswith('```'):
-                result = result.split('```')[0]
-            result = result.strip()
+        # Extract the response text from the message
+        result = message.content[0].text.strip()
+        
+        # Find the JSON content within the response
+        json_start = result.find('{')
+        json_end = result.rfind('}') + 1
+        
+        if json_start == -1 or json_end == 0:
+            logging.error("No JSON content found in response")
+            raise ValueError("Invalid response format")
             
-            try:
-                event_details = json.loads(result)
-                # Check for both possible event name keys
-                event_name = event_details.get('eventName') or event_details.get('event_name', 'Unnamed Event')
-                event_details['eventName'] = event_name  # Normalize to eventName
-            except json.JSONDecodeError as e:
-                logging.error(f"Failed to parse JSON: {result}")
-                logging.error(f"JSON Error: {str(e)}")
-                # Provide default event details
-                event_details = {
-                    'eventName': 'Unnamed Event',
-                    'date': datetime.now().strftime('%Y-%m-%d'),
-                    'time': '9:30 AM',
-                    'venue': '@home_default',
-                    'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
-                }
+        json_str = result[json_start:json_end]
+        
+        try:
+            event_details = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse JSON: {json_str}")
+            logging.error(f"JSON Error: {str(e)}")
+            # Provide default event details
+            event_details = {
+                'eventName': 'Unnamed Event',
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'startTime': '09:30 AM',
+                'endTime': '10:30 AM',
+                'venue': '@home_default',
+                'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
+            }
+        
+        # Check for both possible event name keys
+        event_name = event_details.get('eventName') or event_details.get('event_name', 'Unnamed Event')
+        event_details['eventName'] = event_name  # Normalize to eventName
 
             logging.info(f"Extracted event details: {event_details}")
 
