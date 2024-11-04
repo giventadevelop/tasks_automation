@@ -253,7 +253,7 @@ def extract_event_details(input_type, event_text, image_path):
                     'date': datetime.now().strftime('%Y-%m-%d'),
                     'time': '9:30 AM',
                     'venue': '@home_default',
-                    'contacts': []
+                    'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
                 }
 
             logging.info(f"Extracted event details: {event_details}")
@@ -268,13 +268,13 @@ def extract_event_details(input_type, event_text, image_path):
                 
                 # Try to get time from different possible fields
                 time_value = None
-                if 'startTime' in event_details:
-                    time_value = event_details['startTime']
-                elif 'endTime' in event_details:
-                    time_value = event_details['endTime']
-                elif 'time' in event_details:
-                    time_value = event_details['time']
-                else:
+                for time_field in ['startTime', 'timeStart', 'start', 'endTime', 'timeEnd', 'end', 'time']:
+                    if time_field in event_details:
+                        time_value = event_details[time_field]
+                        logging.info(f"Found time in field: {time_field}")
+                        break
+                
+                if time_value is None:
                     # Default to 9:30 AM if no time found
                     time_value = "9:30 AM"
                     logging.info("No time found in event details, using default time: 9:30 AM")
@@ -316,8 +316,21 @@ def extract_event_details(input_type, event_text, image_path):
         venue = event_details.get('venue')
         if venue is None:
             venue = '@home_default'
+        # Handle contacts with better error handling
         contacts = event_details.get('contacts', [])
-        contact_list = [f"{contact['name']} - {contact['phone']}" for contact in contacts]
+        contact_list = []
+        for contact in contacts:
+            try:
+                name = contact.get('name', 'Unknown')
+                phone = contact.get('phone', 'N/A')
+                contact_list.append(f"{name} - {phone}")
+            except (KeyError, AttributeError) as e:
+                logging.warning(f"Error processing contact: {str(e)}")
+                contact_list.append("Unknown Contact - N/A")
+        
+        # If no valid contacts were found, add a default contact
+        if not contact_list:
+            contact_list = ["Default Contact - N/A"]
 
         logging.info(f"Extracted event: {event_name}, Date: {event_datetime}, Venue: {venue}, Contacts: {contact_list}")
 
