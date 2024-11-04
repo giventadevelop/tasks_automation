@@ -427,37 +427,52 @@ Contacts:
             }
             event['attachments'] = [file_attachment]
 
-        # Calculate reminder dates and minutes before
-        week_before = event_datetime - timedelta(days=7)
-        day_before = event_datetime - timedelta(days=1) 
-        day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
-
-        # Initialize empty reminders list
-        event['reminders'] = {
-            'useDefault': False,
-            'overrides': []
-        }
-
-        # Create one reminder for each specified time
-        reminder_times = [
-            (week_before, "Week before reminder"),
-            (day_before, "Day before reminder"),
-            (day_of_event_9am, "Day of event reminder")
-        ]
-
-        for reminder_date, reminder_desc in reminder_times:
-            minutes_before = int((event_datetime - reminder_date).total_seconds() / 60)
-            if minutes_before > 0:  # Only add future reminders
-                event['reminders']['overrides'].append({
-                    'method': 'popup',
-                    'minutes': minutes_before
-                })
-                logging.info(f"Added {reminder_desc} for {minutes_before} minutes before event")
-
-        # Create the main event with the calculated reminders
+        # Create the main event first
         event = calendar_service.events().insert(calendarId='giventauser@gmail.com', body=event,
                                                supportsAttachments=True).execute()
         print(f'Event created: {event.get("htmlLink")}')
+
+        # Create reminders for a week before, a day before, and at 9:00 AM on the day of the event
+        week_before = event_datetime - timedelta(days=7)
+        day_before = event_datetime - timedelta(days=1)
+        day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        # Create reminders for each date
+        for reminder_date in [week_before, day_before, day_of_event_9am]:
+            reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
+            reminder_start = reminder_date.replace(microsecond=0)
+            reminder_end = reminder_start + timedelta(minutes=30)
+            
+            reminder_event = {
+                'summary': reminder_title,
+                'description': f"Reminder for the upcoming event:\n\n{description}",
+                'location': venue,
+                'start': {
+                    'dateTime': reminder_start.strftime("%Y-%m-%dT%H:%M:%S"),
+                    'timeZone': 'America/New_York',
+                },
+                'end': {
+                    'dateTime': reminder_end.strftime("%Y-%m-%dT%H:%M:%S"),
+                    'timeZone': 'America/New_York',
+                },
+                'reminders': {
+                    'useDefault': True,
+                },
+            }
+
+            if file_attachment:
+                reminder_event['attachments'] = [file_attachment]
+
+            try:
+                calendar_service.events().insert(
+                    calendarId='giventauser@gmail.com',
+                    body=reminder_event,
+                    supportsAttachments=True
+                ).execute()
+                print(f'Reminder event created for {reminder_date.strftime("%Y-%m-%d %I:%M %p")}: {reminder_title}')
+            except Exception as e:
+                logging.warning(f"Failed to create reminder for {reminder_date}: {str(e)}")
+                continue
     except Exception as e:
         logging.error(f"Error in create_calendar_event: {str(e)}")
         messagebox.showerror("Error", f"Failed to create calendar event:\n{str(e)}")
