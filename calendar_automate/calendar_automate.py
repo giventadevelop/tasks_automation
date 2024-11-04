@@ -69,13 +69,13 @@ def list_calendar_events():
         # Example: List the next 10 events from the primary calendar
         print(" List the next 10 events ...list_calendar_events() .")
 
-        # Set timeout parameters
+        # Get events list
         events_result = calendar_service.events().list(
             calendarId='giventauser@gmail.com',
             maxResults=10,
             singleEvents=True,
             orderBy='startTime'
-        ).execute(num_retries=3, timeout=30)
+        ).execute(num_retries=3)
 
         events = events_result.get('items', [])
 
