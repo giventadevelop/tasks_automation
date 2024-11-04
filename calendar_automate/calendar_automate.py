@@ -240,14 +240,33 @@ def extract_event_details(input_type, event_text, image_path):
 
             # Parse date and time with defaults
             date = event_details.get('date', datetime.now().strftime('%Y-%m-%d'))
-            time = event_details.get('time', '10:30 AM')
-
-            date_time_str = f"{date} {time}"
+            
+            # Try to get time from different possible fields
             try:
-                event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
-            except ValueError:
-                event_datetime = datetime.now().replace(hour=10, minute=30, second=0, microsecond=0)
-                logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
+                if 'startTime' in event_details:
+                    time = event_details['startTime']
+                elif 'endTime' in event_details:
+                    time = event_details['endTime']
+                elif 'time' in event_details:
+                    time = event_details['time']
+                else:
+                    raise ValueError("No time field found")
+
+                date_time_str = f"{date} {time}"
+                # Try different time formats
+                for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
+                    try:
+                        event_datetime = datetime.strptime(date_time_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    raise ValueError("Could not parse time with any format")
+                    
+            except (ValueError, KeyError) as e:
+                # Default to 9:30 AM if any parsing fails
+                event_datetime = datetime.strptime(f"{date} 9:30 AM", '%Y-%m-%d %I:%M %p')
+                logging.warning(f"Failed to parse time ({str(e)}). Using default: 9:30 AM")
         except Exception as e:
             logging.error(f"Error processing event details: {str(e)}")
             raise
