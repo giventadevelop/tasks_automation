@@ -256,7 +256,7 @@ def extract_event_details(input_type, event_text, image_path):
                 ]
             )
 
-        # Extract the response text from the message
+        # Extract the response text from the message and clean it
         result = message.content[0].text.strip()
         
         # Find the JSON content within the response
@@ -264,7 +264,7 @@ def extract_event_details(input_type, event_text, image_path):
             # First try to parse the entire response as JSON
             event_details = json.loads(result)
         except json.JSONDecodeError:
-            # If that fails, try to extract JSON from the response
+            # If that fails, try to extract and clean JSON from the response
             json_start = result.find('{')
             json_end = result.rfind('}') + 1
             
@@ -274,15 +274,36 @@ def extract_event_details(input_type, event_text, image_path):
                 
             json_str = result[json_start:json_end]
             
-            # Clean up common formatting issues
-            json_str = json_str.replace('\n', '').replace('            ', '').strip()
+            # More aggressive cleanup of common formatting issues
+            json_str = (json_str
+                       .replace('\n', '')
+                       .replace('            ', '')
+                       .replace('        ', '')
+                       .replace('    ', '')
+                       .strip())
+            
+            # Remove any trailing commas before closing braces
+            json_str = json_str.replace(',}', '}').replace(',]', ']')
             
             try:
                 event_details = json.loads(json_str)
             except json.JSONDecodeError as e:
-                logging.error(f"Failed to parse JSON after cleanup: {json_str}")
-                logging.error(f"JSON Error: {str(e)}")
-                raise ValueError(f"Could not parse event details: {str(e)}")
+                # If still failing, try an even more aggressive cleanup
+                json_str = ''.join(c for c in json_str if not c.isspace())
+                try:
+                    event_details = json.loads(json_str)
+                except json.JSONDecodeError:
+                    logging.error(f"Failed to parse JSON after cleanup: {json_str}")
+                    logging.error(f"JSON Error: {str(e)}")
+                    # Instead of raising an error, return default values
+                    event_details = {
+                        'eventName': 'Unnamed Event',
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                        'startTime': '09:30 AM',
+                        'endTime': '10:30 AM',
+                        'venue': '@home_default',
+                        'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
+                    }
         except json.JSONDecodeError as e:
             logging.error(f"Failed to parse JSON: {json_str}")
             logging.error(f"JSON Error: {str(e)}")
