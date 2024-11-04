@@ -18,6 +18,10 @@ from jproperties import Properties
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.errors import HttpError
+from requests.exceptions import ConnectionError, Timeout
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Define the scopes
 SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/drive.file']
@@ -52,15 +56,31 @@ credentials = service_account.Credentials.from_service_account_file(
 calendar_service = build('calendar', 'v3', credentials=credentials)
 drive_service = build('drive', 'v3', credentials=credentials)
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def list_calendar_events():
-    # Example: List the next 10 events from the primary calendar
-    print(" List the next 10 events ...list_calendar_events() .")
-    events_result = calendar_service.events().list(calendarId='giventauser@gmail.com', maxResults=10, singleEvents=True, orderBy='startTime').execute()
-    events = events_result.get('items', [])
+    try:
+        # Example: List the next 10 events from the primary calendar
+        print(" List the next 10 events ...list_calendar_events() .")
+        events_result = calendar_service.events().list(
+            calendarId='giventauser@gmail.com', 
+            maxResults=10, 
+            singleEvents=True, 
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
 
-    for event in events:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        print(start, event['summary'])
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            print(start, event['summary'])
+    except HttpError as e:
+        logging.error(f"HTTP Error in list_calendar_events: {e}")
+        raise
+    except (ConnectionError, Timeout) as e:
+        logging.error(f"Connection error in list_calendar_events: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error in list_calendar_events: {e}")
+        raise
 
 def ensure_credentials_file():
     if not os.path.exists('credentials.json'):
@@ -239,6 +259,7 @@ def extract_event_details(input_type, event_text, image_path):
         messagebox.showerror("Error", f"An error occurred while processing the event:\n{str(e)}")
         raise
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=None):
     logging.info(f"Creating calendar event with name: {event_name}")
     contacts_str = "\n".join(contact_list)
