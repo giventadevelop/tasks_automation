@@ -187,16 +187,15 @@ def extract_event_details(input_type, event_text, image_path):
                 ]
             )
         
-        result = message.content[0].text
-        event_details = json.loads(result)
-        
-        logging.info(f"Extracted event details: {event_details}")
-        
-        # Parse date and time
-        date = event_details.get('date', '')
-        time = event_details.get('time')
-        if time is None:
-            time = '10:30 AM'
+        try:
+            result = message.content[0].text
+            event_details = json.loads(result)
+            
+            logging.info(f"Extracted event details: {event_details}")
+            
+            # Parse date and time with defaults
+            date = event_details.get('date', datetime.now().strftime('%Y-%m-%d'))
+            time = event_details.get('time', '10:30 AM')
         date_time_str = f"{date} {time}"
         try:
             event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
@@ -219,8 +218,18 @@ def extract_event_details(input_type, event_text, image_path):
         logging.info(f"Extracted event: {event_name}, Date: {event_datetime}, Venue: {venue}, Contacts: {contact_list}")
         
         return event_name, event_datetime, venue, contact_list
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse JSON response: {str(e)}")
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Error", f"Failed to parse event details:\n{str(e)}\n\nUsing default values.")
+        # Return default values
+        return "Default Event", datetime.now(), "@home_default", ["Contact 1 - N/A", "Contact 2 - N/A", "Contact 3 - N/A"]
     except Exception as e:
         logging.error(f"Error in extract_event_details: {str(e)}")
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Error", f"An error occurred while processing the event:\n{str(e)}")
         raise
 
 def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=None):
@@ -337,8 +346,9 @@ def get_or_create_folder(drive_service, folder_name):
         return folder['id']
 
 def main():
-    # Get user input
-    input_type, event_text, image_path = get_event_input()
+    try:
+        # Get user input
+        input_type, event_text, image_path = get_event_input()
 
     # Extract event details
     event_name, event_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
@@ -357,10 +367,16 @@ def main():
     print("\nCreating calendar event:")
     create_calendar_event(calendar_service, drive_service, event_name, event_datetime, venue, contact_list, file_path=image_path)
 
-    # Show success message
-    root = tk.Tk()
-    root.withdraw()
-    messagebox.showinfo("Success", "Calendar entry added successfully!")
+        # Show success message
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo("Success", "Calendar entry added successfully!")
+    except Exception as e:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Error", f"An unexpected error occurred:\n\n{str(e)}")
+        logging.error(f"Main function error: {str(e)}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
