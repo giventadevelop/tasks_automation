@@ -368,7 +368,7 @@ def main():
 
         # List calendar events using service account
         print("\nListing calendar events:")
-        list_calendar_events()
+        # list_calendar_events()
 
         # Create calendar event using service account
         print("\nCreating calendar event:")
