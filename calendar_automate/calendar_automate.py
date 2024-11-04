@@ -279,6 +279,7 @@ def extract_event_details(input_type, event_text, image_path):
                 else:
                     # Default end time to 1 hour after start if not specified
                     event_end_datetime = event_datetime + timedelta(hours=1)
+                    logging.info(f"Using default end time: {event_end_datetime}")
                     
             except (ValueError, KeyError) as e:
                 # Default to 9:30 AM if any parsing fails
@@ -405,7 +406,7 @@ Contacts:
 
         for reminder_date in [week_before, day_before, day_of_event_9am]:
             reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
-        reminder_event = {
+            reminder_event = {
             'summary': reminder_title,
             'description': f"Reminder for the upcoming event:\n\n{description}",
             'location': venue,
