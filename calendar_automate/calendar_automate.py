@@ -396,11 +396,7 @@ Contacts:
             },
             'reminders': {
                 'useDefault': False,
-                'overrides': [
-                    {'method': 'popup', 'minutes': 0},  # On the day of the event
-                    {'method': 'popup', 'minutes': 60 * 24},  # 1 day before
-                    {'method': 'popup', 'minutes': 60 * 24 * 7},  # 1 week before
-                ],
+                'overrides': [],
             },
         }
 
@@ -431,7 +427,20 @@ Contacts:
             }
             event['attachments'] = [file_attachment]
 
-        # Create the main event with built-in reminders instead of separate events
+        # Calculate reminder dates
+        week_before = event_datetime - timedelta(days=7)
+        day_before = event_datetime - timedelta(days=1)
+        day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        # Create one reminder for each specified time
+        for reminder_date in [week_before, day_before, day_of_event_9am]:
+            minutes_before = int((event_datetime - reminder_date).total_seconds() / 60)
+            event['reminders']['overrides'].append({
+                'method': 'popup',
+                'minutes': minutes_before
+            })
+
+        # Create the main event with the calculated reminders
         event = calendar_service.events().insert(calendarId='giventauser@gmail.com', body=event,
                                                supportsAttachments=True).execute()
         print(f'Event created: {event.get("htmlLink")}')
