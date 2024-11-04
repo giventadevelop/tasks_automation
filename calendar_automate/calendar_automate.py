@@ -196,9 +196,16 @@ def extract_event_details(input_type, event_text, image_path):
             # Parse date and time with defaults
             date = event_details.get('date', datetime.now().strftime('%Y-%m-%d'))
             time = event_details.get('time', '10:30 AM')
-        date_time_str = f"{date} {time}"
-        try:
-            event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
+            
+            date_time_str = f"{date} {time}"
+            try:
+                event_datetime = datetime.strptime(date_time_str, '%Y-%m-%d %I:%M %p')
+            except ValueError:
+                event_datetime = datetime.now().replace(hour=10, minute=30, second=0, microsecond=0)
+                logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
+        except Exception as e:
+            logging.error(f"Error processing event details: {str(e)}")
+            raise
         except ValueError:
             event_datetime = datetime.now().replace(hour=10, minute=30, second=0, microsecond=0)
             logging.warning(f"Failed to parse date and time. Using default: {event_datetime}")
@@ -350,8 +357,8 @@ def main():
         # Get user input
         input_type, event_text, image_path = get_event_input()
 
-    # Extract event details
-    event_name, event_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
+        # Extract event details
+        event_name, event_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
     
     # Print the extracted details for confirmation
     print(f"Extracted Event: {event_name}")
