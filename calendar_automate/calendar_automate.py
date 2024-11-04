@@ -293,11 +293,11 @@ Venue: {venue}
 Contacts:
 {contacts_str}
 """
-    # Create the new event title with event name first, followed by year, month name, day of the month, and weekday
-    event_title = f"{event_name} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
-    logging.info(f"Event title: {event_title}")
+        # Create the new event title with event name first, followed by year, month name, day of the month, and weekday
+        event_title = f"{event_name} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
+        logging.info(f"Event title: {event_title}")
     
-    event = {
+        event = {
         'summary': event_title,
         'location': venue,
         'description': description,
@@ -319,7 +319,7 @@ Contacts:
         },
     }
 
-    file_attachment = None
+        file_attachment = None
     if file_path:
         folder_name = 'GAIN_SHARED_API'
         folder_id = get_or_create_folder(drive_service, folder_name)
@@ -346,15 +346,15 @@ Contacts:
         }
         event['attachments'] = [file_attachment]
 
-    event = calendar_service.events().insert(calendarId='giventauser@gmail.com', body=event, supportsAttachments=True).execute()
-    print(f'Event created: {event.get("htmlLink")}')
+        event = calendar_service.events().insert(calendarId='giventauser@gmail.com', body=event, supportsAttachments=True).execute()
+        print(f'Event created: {event.get("htmlLink")}')
 
-    # Create reminders for a week before, a day before, and at 9:00 AM on the day of the event
-    week_before = event_datetime - timedelta(days=7)
-    day_before = event_datetime - timedelta(days=1)
-    day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
+        # Create reminders for a week before, a day before, and at 9:00 AM on the day of the event
+        week_before = event_datetime - timedelta(days=7)
+        day_before = event_datetime - timedelta(days=1)
+        day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
 
-    for reminder_date in [week_before, day_before, day_of_event_9am]:
+        for reminder_date in [week_before, day_before, day_of_event_9am]:
         reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
         reminder_event = {
             'summary': reminder_title,
@@ -377,6 +377,10 @@ Contacts:
         
         calendar_service.events().insert(calendarId='giventauser@gmail.com', body=reminder_event, supportsAttachments=True).execute()
         print(f'Reminder event created for {reminder_date.strftime("%Y-%m-%d %I:%M %p")}: {reminder_title}')
+    except Exception as e:
+        logging.error(f"Error in create_calendar_event: {str(e)}")
+        messagebox.showerror("Error", f"Failed to create calendar event:\n{str(e)}")
+        raise
 
 def get_or_create_folder(drive_service, folder_name):
     # Check if folder already exists
