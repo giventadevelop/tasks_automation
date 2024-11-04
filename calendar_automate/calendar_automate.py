@@ -285,7 +285,7 @@ def create_calendar_event(calendar_service, drive_service, event_name, event_dat
     try:
         logging.info(f"Creating calendar event with name: {event_name}")
         contacts_str = "\n".join(contact_list)
-    description = f"""
+        description = f"""
 Event: {event_name}
 Date: {event_datetime.strftime('%Y-%m-%d %I:%M %p')}
 Venue: {venue}
