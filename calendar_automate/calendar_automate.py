@@ -246,15 +246,21 @@ def extract_event_details(input_type, event_text, image_path):
                 start_time = None
                 end_time = None
                 
+                # Try to get time from different possible fields
+                time_value = None
                 if 'startTime' in event_details:
-                    start_time = event_details['startTime']
+                    time_value = event_details['startTime']
+                elif 'endTime' in event_details:
+                    time_value = event_details['endTime']
                 elif 'time' in event_details:
-                    start_time = event_details['time']
+                    time_value = event_details['time']
                 else:
-                    raise ValueError("No start time found")
+                    # Default to 9:30 AM if no time found
+                    time_value = "9:30 AM"
+                    logging.info("No time found in event details, using default time: 9:30 AM")
 
-                # Parse start time
-                start_date_str = f"{date} {start_time}"
+                # Parse the time
+                start_date_str = f"{date} {time_value}"
                 for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
                     try:
                         event_datetime = datetime.strptime(start_date_str, fmt)
@@ -262,24 +268,13 @@ def extract_event_details(input_type, event_text, image_path):
                     except ValueError:
                         continue
                 else:
-                    raise ValueError("Could not parse start time with any format")
+                    # If parsing fails, use default time
+                    event_datetime = datetime.strptime(f"{date} 9:30 AM", '%Y-%m-%d %I:%M %p')
+                    logging.warning("Failed to parse time. Using default: 9:30 AM")
 
-                # Parse end time if available
-                if 'endTime' in event_details:
-                    end_time = event_details['endTime']
-                    end_date_str = f"{date} {end_time}"
-                    for fmt in ['%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I:%M%p']:
-                        try:
-                            event_end_datetime = datetime.strptime(end_date_str, fmt)
-                            break
-                        except ValueError:
-                            continue
-                    else:
-                        raise ValueError("Could not parse end time with any format")
-                else:
-                    # Default end time to 1 hour after start if not specified
-                    event_end_datetime = event_datetime + timedelta(hours=1)
-                    logging.info(f"Using default end time: {event_end_datetime}")
+                # Set end time to 1 hour after start time
+                event_end_datetime = event_datetime + timedelta(hours=1)
+                logging.info(f"Start time: {event_datetime}, End time: {event_end_datetime}")
                     
             except (ValueError, KeyError) as e:
                 # Default to 9:30 AM if any parsing fails
@@ -405,23 +400,28 @@ Contacts:
         day_of_event_9am = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
 
         for reminder_date in [week_before, day_before, day_of_event_9am]:
+            # Ensure reminder start time is not in the past
+            if reminder_date <= datetime.now():
+                logging.warning(f"Skipping reminder for {reminder_date} as it's in the past")
+                continue
+                
             reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
             reminder_event = {
-            'summary': reminder_title,
-            'description': f"Reminder for the upcoming event:\n\n{description}",
-            'location': venue,
-            'start': {
-                'dateTime': reminder_date.isoformat(),
-                'timeZone': 'America/New_York',
-            },
-            'end': {
-                'dateTime': (reminder_date + timedelta(minutes=30)).isoformat(),
-                'timeZone': 'America/New_York',
-            },
-            'reminders': {
-                'useDefault': True,
-            },
-        }
+                'summary': reminder_title,
+                'description': f"Reminder for the upcoming event:\n\n{description}",
+                'location': venue,
+                'start': {
+                    'dateTime': reminder_date.replace(microsecond=0).isoformat(),
+                    'timeZone': 'America/New_York',
+                },
+                'end': {
+                    'dateTime': (reminder_date + timedelta(minutes=30)).replace(microsecond=0).isoformat(),
+                    'timeZone': 'America/New_York',
+                },
+                'reminders': {
+                    'useDefault': True,
+                },
+            }
         if file_attachment:
             reminder_event['attachments'] = [file_attachment]
 
