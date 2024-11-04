@@ -288,15 +288,15 @@ def extract_event_details(input_type, event_text, image_path):
         event_name = event_details.get('eventName') or event_details.get('event_name', 'Unnamed Event')
         event_details['eventName'] = event_name  # Normalize to eventName
 
-            logging.info(f"Extracted event details: {event_details}")
+        logging.info(f"Extracted event details: {event_details}")
 
-            # Parse date and time with defaults
-            date = event_details.get('date', datetime.now().strftime('%Y-%m-%d'))
-            
-            # Try to get time from different possible fields
-            try:
-                start_time = None
-                end_time = None
+        # Parse date and time with defaults
+        date = event_details.get('date', datetime.now().strftime('%Y-%m-%d'))
+        
+        # Try to get time from different possible fields
+        try:
+            start_time = None
+            end_time = None
                 
                 # Try to get time from different possible fields
                 time_value = None
