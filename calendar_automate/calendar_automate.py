@@ -234,7 +234,27 @@ def extract_event_details(input_type, event_text, image_path):
 
         try:
             result = message.content[0].text
-            event_details = json.loads(result)
+            # Clean up the response text to ensure it's valid JSON
+            result = result.strip()
+            if result.startswith('```json'):
+                result = result.split('```json')[1]
+            if result.endswith('```'):
+                result = result.split('```')[0]
+            result = result.strip()
+            
+            try:
+                event_details = json.loads(result)
+            except json.JSONDecodeError as e:
+                logging.error(f"Failed to parse JSON: {result}")
+                logging.error(f"JSON Error: {str(e)}")
+                # Provide default event details
+                event_details = {
+                    'eventName': 'Unnamed Event',
+                    'date': datetime.now().strftime('%Y-%m-%d'),
+                    'time': '9:30 AM',
+                    'venue': '@home_default',
+                    'contacts': []
+                }
 
             logging.info(f"Extracted event details: {event_details}")
 
@@ -308,8 +328,9 @@ def extract_event_details(input_type, event_text, image_path):
         root.withdraw()
         messagebox.showerror("Error", f"Failed to parse event details:\n{str(e)}\n\nUsing default values.")
         # Return default values
-        return "Default Event", datetime.now(), "@home_default", ["Contact 1 - N/A", "Contact 2 - N/A",
-                                                                  "Contact 3 - N/A"]
+        default_datetime = datetime.now()
+        default_end = default_datetime + timedelta(hours=1)
+        return "Default Event", default_datetime, default_end, "@home_default", ["Contact 1 - N/A"]
     except Exception as e:
         logging.error(f"Error in extract_event_details: {str(e)}")
         root = tk.Tk()
