@@ -527,12 +527,26 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 )
 def create_calendar_event(calendar_service, drive_service, event_details, file_path=None):
     try:
-        # Check and update year if needed
-        current_year = datetime.now().year
-        if event_datetime.year < current_year:
-            event_datetime = event_datetime.replace(year=current_year)
-            event_end_datetime = event_end_datetime.replace(year=current_year)
-            logging.info(f"Updated year to current year: {current_year}")
+        # Parse dates and check year
+        try:
+            date_str = event_details.get('date', '').strip()
+            start_time_str = event_details.get('startTime', '09:30 AM').strip()
+            end_time_str = event_details.get('endTime', '10:30 AM').strip()
+            
+            event_datetime = datetime.strptime(f"{date_str} {start_time_str}", '%Y-%m-%d %I:%M %p')
+            event_end_datetime = datetime.strptime(f"{date_str} {end_time_str}", '%Y-%m-%d %I:%M %p')
+            
+            # Check and update year if needed
+            current_year = datetime.now().year
+            if event_datetime.year < current_year:
+                event_datetime = event_datetime.replace(year=current_year)
+                event_end_datetime = event_end_datetime.replace(year=current_year)
+                logging.info(f"Updated year to current year: {current_year}")
+        except ValueError as e:
+            logging.warning(f"Error parsing date/time: {e}. Using current date with default times.")
+            current_date = datetime.now()
+            event_datetime = current_date.replace(hour=9, minute=30)
+            event_end_datetime = current_date.replace(hour=10, minute=30)
 
         # Create and show edit dialog
         root = tk.Tk()
