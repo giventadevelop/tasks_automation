@@ -282,8 +282,12 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 event_details = json.loads(json_str)
                 
                 # Create and show edit dialog
-                edit_dialog = tk.Toplevel()
+                root = tk.Tk()
+                root.withdraw()  # Hide the main window
+                edit_dialog = tk.Toplevel(root)
                 edit_dialog.title("Edit Event Details")
+                edit_dialog.lift()  # Bring dialog to front
+                edit_dialog.focus_force()  # Force focus on dialog
                 
                 # Create form fields
                 fields = {}
@@ -378,7 +382,9 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
                 
                 # Wait for dialog to close
+                edit_dialog.grab_set()  # Make dialog modal
                 edit_dialog.wait_window()
+                root.destroy()  # Clean up the root window
                 
             except json.JSONDecodeError as e:
                 # If still failing, try an even more aggressive cleanup
