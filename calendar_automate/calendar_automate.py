@@ -191,6 +191,9 @@ def extract_event_details(input_type, event_text, image_path):
 
         prompt = """Please extract the following information from this {}: event name, date, time, venue, and contacts. If there is no year supplied, default it as the current year. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields.
 In otherDetails field fill in any meeting links or zoom meeting info and any extra information  
+if there is no time supplied start time set it as 09:30 AM
+if no month provided default to current month for example if the input is 6th call John
+ then return the date 6th of current month
 Return ONLY a valid JSON object in this exact format, with no additional text:
 {{"eventName": "Example Event Name",
   "date": "2024-11-04",
@@ -264,7 +267,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 
             json_str = result[json_start:json_end]
             
-            # More aggressive cleanup of common formatting issues
+            # More aggressive cleanup of common formatting issuesn
             json_str = (json_str
                        .replace('\n', '')
                        .replace('            ', '')
