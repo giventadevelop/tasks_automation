@@ -175,6 +175,7 @@ def encode_image(image_path):
 
 
 def extract_event_details(input_type, event_text, image_path):
+    global event_details
     try:
         if getattr(sys, 'frozen', False):
             base_path = sys._MEIPASS
@@ -565,6 +566,7 @@ def main():
         input_type, event_text, image_path = get_event_input()
 
         # Extract event details
+        global event_details
         event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
 
         # Print the extracted details for confirmation
