@@ -527,6 +527,13 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 )
 def create_calendar_event(calendar_service, drive_service, event_details, file_path=None):
     try:
+        # Check and update year if needed
+        current_year = datetime.now().year
+        if event_datetime.year < current_year:
+            event_datetime = event_datetime.replace(year=current_year)
+            event_end_datetime = event_end_datetime.replace(year=current_year)
+            logging.info(f"Updated year to current year: {current_year}")
+
         # Create and show edit dialog
         root = tk.Tk()
         root.withdraw()  # Hide the main window
