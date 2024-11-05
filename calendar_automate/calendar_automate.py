@@ -527,7 +527,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 )
 def create_calendar_event(calendar_service, drive_service, event_details, file_path=None):
     try:
-        # Parse dates and check year
+        # Parse dates and check year before showing the form
         try:
             date_str = event_details.get('date', '').strip()
             start_time_str = event_details.get('startTime', '09:30 AM').strip()
@@ -541,6 +541,8 @@ def create_calendar_event(calendar_service, drive_service, event_details, file_p
             if event_datetime.year < current_year:
                 event_datetime = event_datetime.replace(year=current_year)
                 event_end_datetime = event_end_datetime.replace(year=current_year)
+                # Update the date in event_details with the corrected year
+                event_details['date'] = event_datetime.strftime('%Y-%m-%d')
                 logging.info(f"Updated year to current year: {current_year}")
         except ValueError as e:
             logging.warning(f"Error parsing date/time: {e}. Using current date with default times.")
