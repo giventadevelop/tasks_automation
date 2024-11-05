@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['calendar_automate.py'],
-    pathex=['C:/Users/gain/git/python/tasks_automation/calendar_automate'],
-    binaries=[],
-    datas=[('C:/Users/gain/git/python/tasks_automation/calendar_automate/property_files/calendar-automate-srvc-account-ref-file.json','property_files'), ('C:/Users/gain/git/python/tasks_automation/calendar_automate/property_files/calendar_api_properties.properties','property_files')],
-    hiddenimports=[],
+   ['calendar_automate.py'],
+pathex=['C:/Users/gain/git/python/tasks_automation/calendar_automate'],
+binaries=[],
+datas=[('C:/Users/gain/git/python/tasks_automation/calendar_automate/property_files/calendar-automate-srvc-account-ref-file.json','property_files'), ('C:/Users/gain/git/python/tasks_automation/calendar_automate/property_files/calendar_api_properties.properties','property_files')],
+hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

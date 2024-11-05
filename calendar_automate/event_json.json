@@ -1,0 +1,25 @@
+{
+  'eventName': 'Art & Literature Festival',
+  'date': '2023-11-16',
+  'startTime': '2023-11-16 09:30 AM',
+  'endTime': '2023-11-16 09:00 PM',
+  'venue': 'Dragonetti Auditorium, Randolph, NJ',
+  'contacts': [
+    {
+      'name': 'Harish',
+      'phone': '+1 (732) 535-1945'
+    },
+    {
+      'name': 'Madhav',
+      'phone': '+1 (908) 500-1717'
+    },
+    {
+      'name': 'Rajesh',
+      'phone': '+1 (908) 883-1119'
+    },
+    {
+      'name': 'Sandeep',
+      'phone': '+1 (732) 895-1716'
+    }
+  ]
+}
