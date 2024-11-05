@@ -280,6 +280,106 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             
             try:
                 event_details = json.loads(json_str)
+                
+                # Create and show edit dialog
+                edit_dialog = tk.Toplevel()
+                edit_dialog.title("Edit Event Details")
+                
+                # Create form fields
+                fields = {}
+                row = 0
+                
+                # Event Name
+                tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
+                fields['eventName'] = tk.Entry(edit_dialog, width=40)
+                fields['eventName'].insert(0, event_details.get('eventName', ''))
+                fields['eventName'].grid(row=row, column=1, padx=5, pady=5)
+                row += 1
+                
+                # Date
+                tk.Label(edit_dialog, text="Date (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5)
+                fields['date'] = tk.Entry(edit_dialog, width=40)
+                fields['date'].insert(0, event_details.get('date', ''))
+                fields['date'].grid(row=row, column=1, padx=5, pady=5)
+                row += 1
+                
+                # Start Time
+                tk.Label(edit_dialog, text="Start Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
+                fields['startTime'] = tk.Entry(edit_dialog, width=40)
+                fields['startTime'].insert(0, event_details.get('startTime', ''))
+                fields['startTime'].grid(row=row, column=1, padx=5, pady=5)
+                row += 1
+                
+                # End Time
+                tk.Label(edit_dialog, text="End Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
+                fields['endTime'] = tk.Entry(edit_dialog, width=40)
+                fields['endTime'].insert(0, event_details.get('endTime', ''))
+                fields['endTime'].grid(row=row, column=1, padx=5, pady=5)
+                row += 1
+                
+                # Venue
+                tk.Label(edit_dialog, text="Venue:").grid(row=row, column=0, padx=5, pady=5)
+                fields['venue'] = tk.Entry(edit_dialog, width=40)
+                fields['venue'].insert(0, event_details.get('venue', ''))
+                fields['venue'].grid(row=row, column=1, padx=5, pady=5)
+                row += 1
+                
+                # Contacts
+                tk.Label(edit_dialog, text="Contacts:").grid(row=row, column=0, padx=5, pady=5)
+                contacts_text = tk.Text(edit_dialog, width=40, height=4)
+                contacts = event_details.get('contacts', [])
+                contacts_str = '\n'.join([f"{c.get('name', '')}-{c.get('phone', '')}" for c in contacts])
+                contacts_text.insert('1.0', contacts_str)
+                contacts_text.grid(row=row, column=1, padx=5, pady=5)
+                fields['contacts'] = contacts_text
+                row += 1
+                
+                # Other Details
+                tk.Label(edit_dialog, text="Other Details:").grid(row=row, column=0, padx=5, pady=5)
+                other_details = tk.Text(edit_dialog, width=40, height=4)
+                other_details.insert('1.0', event_details.get('otherDetails', ''))
+                other_details.grid(row=row, column=1, padx=5, pady=5)
+                fields['otherDetails'] = other_details
+                row += 1
+                
+                def on_submit():
+                    # Update event_details with edited values
+                    event_details['eventName'] = fields['eventName'].get()
+                    event_details['date'] = fields['date'].get()
+                    event_details['startTime'] = fields['startTime'].get()
+                    event_details['endTime'] = fields['endTime'].get()
+                    event_details['venue'] = fields['venue'].get()
+                    
+                    # Parse contacts from text
+                    contacts_text = fields['contacts'].get('1.0', tk.END).strip()
+                    contacts = []
+                    for line in contacts_text.split('\n'):
+                        if '-' in line:
+                            name, phone = line.split('-', 1)
+                            contacts.append({'name': name.strip(), 'phone': phone.strip()})
+                    event_details['contacts'] = contacts
+                    
+                    # Get other details
+                    event_details['otherDetails'] = fields['otherDetails'].get('1.0', tk.END).strip()
+                    
+                    edit_dialog.destroy()
+                
+                # Submit button
+                submit_btn = tk.Button(edit_dialog, text="Submit", command=on_submit)
+                submit_btn.grid(row=row, column=0, columnspan=2, pady=20)
+                
+                # Center the dialog
+                edit_dialog.geometry("600x700")
+                edit_dialog.update_idletasks()
+                width = edit_dialog.winfo_width()
+                height = edit_dialog.winfo_height()
+                x = (edit_dialog.winfo_screenwidth() // 2) - (width // 2)
+                y = (edit_dialog.winfo_screenheight() // 2) - (height // 2)
+                edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
+                
+                # Wait for dialog to close
+                edit_dialog.wait_window()
+                
             except json.JSONDecodeError as e:
                 # If still failing, try an even more aggressive cleanup
                 json_str = ''.join(c for c in json_str if not c.isspace())
