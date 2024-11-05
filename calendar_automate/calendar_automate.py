@@ -189,7 +189,7 @@ def extract_event_details(input_type, event_text, image_path):
         client = anthropic.Anthropic(api_key=api_key)
 
         prompt = """Please extract the following information from this {}: event name, date, time, venue, and contacts. If there is no year supplied, default it as the current year. Format the response as a JSON object. For the date and time, please provide them in the format 'YYYY-MM-DD HH:MM AM/PM'. For contacts, provide a list of objects with 'name' and 'phone' fields.
-
+In otherDetails field fill in any meeting links or zoom meeting info and any extra information  
 Return ONLY a valid JSON object in this exact format, with no additional text:
 {{"eventName": "Example Event Name",
   "date": "2024-11-04",
@@ -199,7 +199,8 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
   "contacts": [
     {{"name": "Contact Name",
       "phone": "123-456-7890"}}
-  ]
+  ],
+  "otherDetails": "meeting links and any extra information"
 }}"""
 
         if input_type == "image":
