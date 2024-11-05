@@ -551,6 +551,8 @@ Other Details:
             event_end_datetime = event_datetime + timedelta(hours=1)
             logging.warning(f"Adjusted end time to be 1 hour after start time: {event_end_datetime}")
 
+
+
         event = {
             'summary': event_title,
             'location': venue,
@@ -595,6 +597,7 @@ Other Details:
                 'mimeType': 'application/octet-stream'
             }
             event['attachments'] = [file_attachment]
+
 
         # Create the main event first
         event = calendar_service.events().insert(calendarId='giventauser@gmail.com', body=event,
