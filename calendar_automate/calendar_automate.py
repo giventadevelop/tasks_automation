@@ -724,14 +724,14 @@ Other Details:
 
         # Create reminders for each date
         for reminder_date in [week_before, day_before, day_of_event_9am]:
-            reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_name}"
+            reminder_title = f"{event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]}) - Reminder: {event_details['eventName']}"
             reminder_start = reminder_date.replace(microsecond=0)
             reminder_end = reminder_start + timedelta(minutes=30)
             
             reminder_event = {
                 'summary': reminder_title,
                 'description': f"Reminder for the upcoming event:\n\n{description}",
-                'location': venue,
+                'location': event_details['venue'],
                 'start': {
                     'dateTime': reminder_start.strftime("%Y-%m-%dT%H:%M:%S"),
                     'timeZone': 'America/New_York',
