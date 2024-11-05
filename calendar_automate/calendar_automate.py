@@ -632,9 +632,28 @@ def create_calendar_event(calendar_service, drive_service, event_details, file_p
         edit_dialog.wait_window()
         root.destroy()  # Clean up the root window
 
-        # Parse the dates and times
-        event_datetime = datetime.strptime(f"{event_details['date']} {event_details['startTime']}", '%Y-%m-%d %I:%M %p')
-        event_end_datetime = datetime.strptime(f"{event_details['date']} {event_details['endTime']}", '%Y-%m-%d %I:%M %p')
+        # Parse the dates and times with better error handling
+        try:
+            # Clean up any extra whitespace in the date and time strings
+            date_str = event_details['date'].strip()
+            start_time_str = event_details['startTime'].strip()
+            end_time_str = event_details['endTime'].strip()
+            
+            # If time is missing, set default times
+            if not start_time_str:
+                start_time_str = "09:30 AM"
+            if not end_time_str:
+                end_time_str = "10:30 AM"
+            
+            # Attempt to parse the datetime
+            event_datetime = datetime.strptime(f"{date_str} {start_time_str}", '%Y-%m-%d %I:%M %p')
+            event_end_datetime = datetime.strptime(f"{date_str} {end_time_str}", '%Y-%m-%d %I:%M %p')
+        except ValueError:
+            # If parsing fails, use current date with default times
+            current_date = datetime.now().strftime('%Y-%m-%d')
+            event_datetime = datetime.strptime(f"{current_date} 09:30 AM", '%Y-%m-%d %I:%M %p')
+            event_end_datetime = datetime.strptime(f"{current_date} 10:30 AM", '%Y-%m-%d %I:%M %p')
+            logging.warning("Failed to parse date/time. Using default values.")
         
         # Ensure end time is after start time
         if event_end_datetime <= event_datetime:
