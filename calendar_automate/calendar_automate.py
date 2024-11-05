@@ -291,7 +291,8 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                         'startTime': '09:30 AM',
                         'endTime': '10:30 AM',
                         'venue': '@home_default',
-                        'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
+                        'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}],
+                        'otherDetails': 'No additional details provided'
                     }
         except json.JSONDecodeError as e:
             logging.error(f"JSON Error: {str(e)}")
@@ -427,6 +428,9 @@ Venue: {venue}
 
 Contacts:
 {contacts_str}
+
+Other Details:
+{event_details.get('otherDetails', 'No additional details provided')}
 """
         # Create the new event title with event name first, followed by year, month name, day of the month, and weekday
         event_title = f"{event_name} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
