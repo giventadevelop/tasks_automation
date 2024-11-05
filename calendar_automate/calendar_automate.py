@@ -525,16 +525,129 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
     wait=wait_exponential(multiplier=2, min=4, max=30),
     reraise=True
 )
-def create_calendar_event(calendar_service, drive_service, event_name, event_datetime, event_end_datetime, venue, contact_list,
-                          file_path=None):
+def create_calendar_event(calendar_service, drive_service, event_details, file_path=None):
     try:
-        logging.info(f"Creating calendar event with name: {event_name}")
-        contacts_str = "\n".join(contact_list)
+        # Create and show edit dialog
+        root = tk.Tk()
+        root.withdraw()  # Hide the main window
+        edit_dialog = tk.Toplevel(root)
+        edit_dialog.title("Edit Event Details")
+        edit_dialog.lift()  # Bring dialog to front
+        edit_dialog.focus_force()  # Force focus on dialog
+        
+        # Create form fields
+        fields = {}
+        row = 0
+        
+        # Event Name
+        tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
+        fields['eventName'] = tk.Entry(edit_dialog, width=40)
+        fields['eventName'].insert(0, event_details.get('eventName', ''))
+        fields['eventName'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Date
+        tk.Label(edit_dialog, text="Date (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5)
+        fields['date'] = tk.Entry(edit_dialog, width=40)
+        fields['date'].insert(0, event_details.get('date', ''))
+        fields['date'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Start Time
+        tk.Label(edit_dialog, text="Start Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
+        fields['startTime'] = tk.Entry(edit_dialog, width=40)
+        fields['startTime'].insert(0, event_details.get('startTime', ''))
+        fields['startTime'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # End Time
+        tk.Label(edit_dialog, text="End Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
+        fields['endTime'] = tk.Entry(edit_dialog, width=40)
+        fields['endTime'].insert(0, event_details.get('endTime', ''))
+        fields['endTime'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Venue
+        tk.Label(edit_dialog, text="Venue:").grid(row=row, column=0, padx=5, pady=5)
+        fields['venue'] = tk.Entry(edit_dialog, width=40)
+        fields['venue'].insert(0, event_details.get('venue', ''))
+        fields['venue'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Contacts
+        tk.Label(edit_dialog, text="Contacts:").grid(row=row, column=0, padx=5, pady=5)
+        contacts_text = tk.Text(edit_dialog, width=40, height=4)
+        contacts = event_details.get('contacts', [])
+        contacts_str = '\n'.join([f"{c.get('name', '')}-{c.get('phone', '')}" for c in contacts])
+        contacts_text.insert('1.0', contacts_str)
+        contacts_text.grid(row=row, column=1, padx=5, pady=5)
+        fields['contacts'] = contacts_text
+        row += 1
+        
+        # Other Details
+        tk.Label(edit_dialog, text="Other Details:").grid(row=row, column=0, padx=5, pady=5)
+        other_details = tk.Text(edit_dialog, width=40, height=4)
+        other_details.insert('1.0', event_details.get('otherDetails', ''))
+        other_details.grid(row=row, column=1, padx=5, pady=5)
+        fields['otherDetails'] = other_details
+        row += 1
+        
+        def on_submit():
+            # Update event_details with edited values
+            event_details['eventName'] = fields['eventName'].get()
+            event_details['date'] = fields['date'].get()
+            event_details['startTime'] = fields['startTime'].get()
+            event_details['endTime'] = fields['endTime'].get()
+            event_details['venue'] = fields['venue'].get()
+            
+            # Parse contacts from text
+            contacts_text = fields['contacts'].get('1.0', tk.END).strip()
+            contacts = []
+            for line in contacts_text.split('\n'):
+                if '-' in line:
+                    name, phone = line.split('-', 1)
+                    contacts.append({'name': name.strip(), 'phone': phone.strip()})
+            event_details['contacts'] = contacts
+            
+            # Get other details
+            event_details['otherDetails'] = fields['otherDetails'].get('1.0', tk.END).strip()
+            
+            edit_dialog.destroy()
+        
+        # Submit button
+        submit_btn = tk.Button(edit_dialog, text="Submit", command=on_submit)
+        submit_btn.grid(row=row, column=0, columnspan=2, pady=20)
+        
+        # Center the dialog
+        edit_dialog.geometry("600x700")
+        edit_dialog.update_idletasks()
+        width = edit_dialog.winfo_width()
+        height = edit_dialog.winfo_height()
+        x = (edit_dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (edit_dialog.winfo_screenheight() // 2) - (height // 2)
+        edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
+        
+        # Wait for dialog to close
+        edit_dialog.grab_set()  # Make dialog modal
+        edit_dialog.wait_window()
+        root.destroy()  # Clean up the root window
+
+        # Parse the dates and times
+        event_datetime = datetime.strptime(f"{event_details['date']} {event_details['startTime']}", '%Y-%m-%d %I:%M %p')
+        event_end_datetime = datetime.strptime(f"{event_details['date']} {event_details['endTime']}", '%Y-%m-%d %I:%M %p')
+        
+        # Ensure end time is after start time
+        if event_end_datetime <= event_datetime:
+            event_end_datetime = event_datetime + timedelta(hours=1)
+            logging.warning(f"Adjusted end time to be 1 hour after start time: {event_end_datetime}")
+
+        logging.info(f"Creating calendar event with name: {event_details['eventName']}")
+        contacts_str = "\n".join([f"{c['name']} - {c['phone']}" for c in event_details['contacts']])
         description = f"""
-Event: {event_name}
+Event: {event_details['eventName']}
 Start Time: {event_datetime.strftime('%Y-%m-%d %I:%M %p')}
 End Time: {event_end_datetime.strftime('%Y-%m-%d %I:%M %p')}
-Venue: {venue}
+Venue: {event_details['venue']}
 
 Contacts:
 {contacts_str}
@@ -543,7 +656,7 @@ Other Details:
 {event_details.get('otherDetails', 'No additional details provided')}
 """
         # Create the new event title with event name first, followed by year, month name, day of the month, and weekday
-        event_title = f"{event_name} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
+        event_title = f"{event_details['eventName']} - {event_datetime.year} {calendar.month_name[event_datetime.month]} {event_datetime.day} ({calendar.day_name[event_datetime.weekday()]})"
         logging.info(f"Event title: {event_title}")
 
         # Ensure end time is after start time
@@ -555,7 +668,7 @@ Other Details:
 
         event = {
             'summary': event_title,
-            'location': venue,
+            'location': event_details['venue'],
             'description': description,
             'start': {
                 'dateTime': event_datetime.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -693,8 +806,7 @@ def main():
 
         # Create calendar event using service account
         print("\nCreating calendar event:")
-        create_calendar_event(calendar_service, drive_service, event_name, event_datetime, event_end_datetime, venue, contact_list,
-                              file_path=image_path)
+        create_calendar_event(calendar_service, drive_service, event_details, file_path=image_path)
 
         # Show success message
         root = tk.Tk()
