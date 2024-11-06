@@ -286,6 +286,10 @@ def create_contact(contact_details):
     try:
         people_service = build('people', 'v1', credentials=credentials)
         
+        # Log the service account email being used
+        service_account_info = credentials.service_account_email
+        logging.info(f"Using service account: {service_account_info}")
+        
         # Prepare phone numbers
         phone_numbers = []
         for number in contact_details['phonenumbers']:
@@ -316,11 +320,31 @@ def create_contact(contact_details):
             ] if contact_details['notes'] else []
         }
         
+        # Log the request URL and body
+        logging.info("Creating contact with URL: https://people.googleapis.com/v1/people:createContact")
+        logging.info(f"Contact body: {json.dumps(contact_body, indent=2)}")
+        
         result = people_service.people().createContact(
             body=contact_body
         ).execute()
         
+        # Log the response
+        logging.info(f"Contact creation response: {json.dumps(result, indent=2)}")
         logging.info(f"Created contact: {result.get('names', [{}])[0].get('displayName')}")
+        
+        # Get the resource name of the created contact
+        resource_name = result.get('resourceName')
+        if resource_name:
+            # Log the contact URL
+            contact_url = f"https://contacts.google.com/person/{resource_name.split('/')[-1]}"
+            logging.info(f"Contact URL: {contact_url}")
+            
+            # Show success message with URL
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showinfo("Success", 
+                              f"Contact created successfully!\nView at: {contact_url}")
+        
         return result
         
     except Exception as e:
