@@ -1038,6 +1038,7 @@ def get_or_create_folder(drive_service, folder_name):
 
 def main():
     try:
+        global event_details
         # Show initial dialog
         choice = show_initial_dialog()
         
@@ -1046,7 +1047,6 @@ def main():
             input_type, event_text, image_path = get_event_input()
 
             # Extract event details
-            global event_details
             event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
 
             # Print the extracted details for confirmation
@@ -1082,29 +1082,6 @@ def main():
             root = tk.Tk()
             root.withdraw()
             messagebox.showinfo("Success", "Contact created successfully!")
-
-        # Extract event details
-        global event_details
-        event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
-
-        # Print the extracted details for confirmation
-        print(f"Extracted Event: {event_name}")
-        print(f"Date and Time: {event_datetime}")
-        print(f"Venue: {venue}")
-        print(f"Contact List: {contact_list}")
-
-        # List calendar events using service account
-        print("\nListing calendar events:")
-        list_calendar_events()
-
-        # Create calendar event using service account
-        print("\nCreating calendar event:")
-        create_calendar_event(calendar_service, drive_service, event_details, file_path=image_path)
-
-        # Show success message
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo("Success", "Calendar entry added successfully!")
     except Exception as e:
         root = tk.Tk()
         root.withdraw()
