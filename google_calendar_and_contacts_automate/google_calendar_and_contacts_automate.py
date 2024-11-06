@@ -24,8 +24,10 @@ import time
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Define the scopes
-SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive',
-          'https://www.googleapis.com/auth/drive.file']
+SCOPES = ['https://www.googleapis.com/auth/calendar', 
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/contacts']
 
 # Determine the base path
 if getattr(sys, 'frozen', False):
@@ -117,6 +119,213 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 # Anthropic API key will be read from .env file at runtime
+
+def show_initial_dialog():
+    root = tk.Tk()
+    root.withdraw()
+    dialog = tk.Toplevel(root)
+    dialog.title("Choose Action")
+    
+    result = {'choice': None}
+    
+    def on_calendar():
+        result['choice'] = 'calendar'
+        dialog.destroy()
+        
+    def on_contacts():
+        result['choice'] = 'contacts'
+        dialog.destroy()
+    
+    tk.Button(dialog, text="Calendar Entry", command=on_calendar).pack(pady=10)
+    tk.Button(dialog, text="Contact Entry", command=on_contacts).pack(pady=10)
+    
+    # Center dialog
+    dialog.geometry("200x150")
+    dialog.update_idletasks()
+    width = dialog.winfo_width()
+    height = dialog.winfo_height()
+    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    dialog.geometry(f'{width}x{height}+{x}+{y}')
+    
+    dialog.grab_set()
+    dialog.wait_window()
+    root.destroy()
+    
+    return result['choice']
+
+def get_contact_input():
+    root = tk.Tk()
+    root.withdraw()
+    
+    dialog = tk.Toplevel()
+    dialog.title("Contact Details")
+    text_area = tk.Text(dialog, width=60, height=20)
+    text_area.pack(padx=10, pady=10)
+    
+    contact_text = ""
+    
+    def on_ok():
+        nonlocal contact_text
+        contact_text = text_area.get("1.0", tk.END).strip()
+        dialog.destroy()
+    
+    ok_button = tk.Button(dialog, text="OK", command=on_ok)
+    ok_button.pack(pady=10)
+    
+    dialog.geometry("500x650")
+    dialog.wait_window()
+    
+    if not contact_text:
+        print("No contact details entered. Exiting.")
+        sys.exit(1)
+        
+    return contact_text
+
+def extract_contact_details(contact_text):
+    try:
+        client = anthropic.Anthropic(api_key=properties.get('ANTHROPIC_API_KEY').data)
+        
+        prompt = """Extract contact information from the following text. Format the response as a JSON object with these fields: firstName, lastName, companyName, phonenumbers (array), and notes. If any field is not found, use an empty string or empty array. Include all original text in the notes field.
+
+Return ONLY a valid JSON object in this exact format, with no additional text:
+{
+  "firstName": "John",
+  "lastName": "Smith", 
+  "companyName": "ACME Corp",
+  "phonenumbers": [
+    "+1 555-0123",
+    "+1 555-4567"
+  ],
+  "notes": "Original text and any additional details"
+}"""
+
+        message = client.messages.create(
+            model="claude-3-opus-20240229",
+            max_tokens=1000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt + "\n\n" + contact_text
+                }
+            ]
+        )
+
+        result = message.content[0].text.strip()
+        contact_details = json.loads(result)
+        
+        # Show edit dialog
+        root = tk.Tk()
+        root.withdraw()
+        edit_dialog = tk.Toplevel(root)
+        edit_dialog.title("Edit Contact Details")
+        
+        fields = {}
+        row = 0
+        
+        # First Name
+        tk.Label(edit_dialog, text="First Name:").grid(row=row, column=0, padx=5, pady=5)
+        fields['firstName'] = tk.Entry(edit_dialog, width=40)
+        fields['firstName'].insert(0, contact_details.get('firstName', ''))
+        fields['firstName'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Last Name
+        tk.Label(edit_dialog, text="Last Name:").grid(row=row, column=0, padx=5, pady=5)
+        fields['lastName'] = tk.Entry(edit_dialog, width=40)
+        fields['lastName'].insert(0, contact_details.get('lastName', ''))
+        fields['lastName'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Company
+        tk.Label(edit_dialog, text="Company:").grid(row=row, column=0, padx=5, pady=5)
+        fields['companyName'] = tk.Entry(edit_dialog, width=40)
+        fields['companyName'].insert(0, contact_details.get('companyName', ''))
+        fields['companyName'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
+        # Phone Numbers
+        tk.Label(edit_dialog, text="Phone Numbers:").grid(row=row, column=0, padx=5, pady=5)
+        phone_text = tk.Text(edit_dialog, width=40, height=4)
+        phones = contact_details.get('phonenumbers', [])
+        phone_text.insert('1.0', '\n'.join(phones))
+        phone_text.grid(row=row, column=1, padx=5, pady=5)
+        fields['phonenumbers'] = phone_text
+        row += 1
+        
+        # Notes
+        tk.Label(edit_dialog, text="Notes:").grid(row=row, column=0, padx=5, pady=5)
+        notes_text = tk.Text(edit_dialog, width=40, height=4)
+        notes_text.insert('1.0', contact_details.get('notes', ''))
+        notes_text.grid(row=row, column=1, padx=5, pady=5)
+        fields['notes'] = notes_text
+        row += 1
+        
+        def on_submit():
+            contact_details['firstName'] = fields['firstName'].get()
+            contact_details['lastName'] = fields['lastName'].get()
+            contact_details['companyName'] = fields['companyName'].get()
+            contact_details['phonenumbers'] = [p.strip() for p in fields['phonenumbers'].get('1.0', tk.END).split('\n') if p.strip()]
+            contact_details['notes'] = fields['notes'].get('1.0', tk.END).strip()
+            edit_dialog.destroy()
+            
+        tk.Button(edit_dialog, text="Submit", command=on_submit).grid(row=row, column=0, columnspan=2, pady=20)
+        
+        edit_dialog.geometry("600x700")
+        edit_dialog.grab_set()
+        edit_dialog.wait_window()
+        root.destroy()
+        
+        return contact_details
+        
+    except Exception as e:
+        logging.error(f"Error extracting contact details: {str(e)}")
+        raise
+
+def create_contact(contact_details):
+    try:
+        people_service = build('people', 'v1', credentials=credentials)
+        
+        # Prepare phone numbers
+        phone_numbers = []
+        for number in contact_details['phonenumbers']:
+            phone_numbers.append({
+                'value': number,
+                'type': 'other'
+            })
+            
+        # Create contact
+        contact_body = {
+            'names': [
+                {
+                    'givenName': contact_details['firstName'],
+                    'familyName': contact_details['lastName']
+                }
+            ],
+            'organizations': [
+                {
+                    'name': contact_details['companyName']
+                }
+            ] if contact_details['companyName'] else [],
+            'phoneNumbers': phone_numbers,
+            'biographies': [
+                {
+                    'value': contact_details['notes'],
+                    'contentType': 'TEXT_PLAIN'
+                }
+            ] if contact_details['notes'] else []
+        }
+        
+        result = people_service.people().createContact(
+            body=contact_body
+        ).execute()
+        
+        logging.info(f"Created contact: {result.get('names', [{}])[0].get('displayName')}")
+        return result
+        
+    except Exception as e:
+        logging.error(f"Error creating contact: {str(e)}")
+        raise
 
 def get_event_input():
     root = tk.Tk()
@@ -829,8 +1038,50 @@ def get_or_create_folder(drive_service, folder_name):
 
 def main():
     try:
-        # Get user input
-        input_type, event_text, image_path = get_event_input()
+        # Show initial dialog
+        choice = show_initial_dialog()
+        
+        if choice == 'calendar':
+            # Get user input for calendar
+            input_type, event_text, image_path = get_event_input()
+
+            # Extract event details
+            global event_details
+            event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
+
+            # Print the extracted details for confirmation
+            print(f"Extracted Event: {event_name}")
+            print(f"Date and Time: {event_datetime}")
+            print(f"Venue: {venue}")
+            print(f"Contact List: {contact_list}")
+
+            # List calendar events using service account
+            print("\nListing calendar events:")
+            list_calendar_events()
+
+            # Create calendar event using service account
+            print("\nCreating calendar event:")
+            create_calendar_event(calendar_service, drive_service, event_details, file_path=image_path)
+
+            # Show success message
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showinfo("Success", "Calendar entry added successfully!")
+            
+        elif choice == 'contacts':
+            # Get contact input
+            contact_text = get_contact_input()
+            
+            # Extract and process contact details
+            contact_details = extract_contact_details(contact_text)
+            
+            # Create the contact
+            create_contact(contact_details)
+            
+            # Show success message
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showinfo("Success", "Contact created successfully!")
 
         # Extract event details
         global event_details
