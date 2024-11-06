@@ -245,6 +245,13 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
         fields['companyName'].grid(row=row, column=1, padx=5, pady=5)
         row += 1
         
+        # Email
+        tk.Label(edit_dialog, text="Email:").grid(row=row, column=0, padx=5, pady=5)
+        fields['email'] = tk.Entry(edit_dialog, width=40)
+        fields['email'].insert(0, contact_details.get('email', ''))
+        fields['email'].grid(row=row, column=1, padx=5, pady=5)
+        row += 1
+        
         # Phone Numbers
         tk.Label(edit_dialog, text="Phone Numbers:").grid(row=row, column=0, padx=5, pady=5)
         phone_text = tk.Text(edit_dialog, width=40, height=4)
@@ -266,6 +273,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             contact_details['firstName'] = fields['firstName'].get()
             contact_details['lastName'] = fields['lastName'].get()
             contact_details['companyName'] = fields['companyName'].get()
+            contact_details['email'] = fields['email'].get()
             contact_details['phonenumbers'] = [p.strip() for p in fields['phonenumbers'].get('1.0', tk.END).split('\n') if p.strip()]
             contact_details['notes'] = fields['notes'].get('1.0', tk.END).strip()
             edit_dialog.destroy()
@@ -312,6 +320,11 @@ def create_contact(contact_details):
                     'name': contact_details['companyName']
                 }
             ] if contact_details['companyName'] else [],
+            'emailAddresses': [
+                {
+                    'value': contact_details['email']
+                }
+            ] if contact_details.get('email') else [],
             'phoneNumbers': phone_numbers,
             'biographies': [
                 {
