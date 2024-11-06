@@ -193,6 +193,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
   "firstName": "John",
   "lastName": "Smith", 
   "companyName": "ACME Corp",
+  "email": "hh@gmail.com",
   "phonenumbers": [
     "+1 555-0123",
     "+1 555-4567"
