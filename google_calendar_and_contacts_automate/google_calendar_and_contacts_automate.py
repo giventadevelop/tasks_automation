@@ -15,10 +15,11 @@ import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
 from jproperties import Properties
 
-from google.oauth2 import service_account
+from oauth_setup import get_oauth_credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
+from google.oauth2.credentials import Credentials
 from requests.exceptions import ConnectionError, Timeout
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -52,13 +53,13 @@ except Exception as e:
 service_account_file = os.path.join(base_path, 'property_files', properties.get('SERVICE_ACCOUNT_FILE',
                                                                                 'calendar-automate-srvc-account-ref-file.json'))
 
-# Load credentials from the service account file
-credentials = service_account.Credentials.from_service_account_file(
-    service_account_file, scopes=SCOPES)
+# Get OAuth2 credentials
+credentials = get_oauth_credentials()
 
 # Build the services
 calendar_service = build('calendar', 'v3', credentials=credentials)
 drive_service = build('drive', 'v3', credentials=credentials)
+people_service = build('people', 'v1', credentials=credentials)
 
 
 @retry(
