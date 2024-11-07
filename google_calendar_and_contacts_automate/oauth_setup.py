@@ -31,9 +31,9 @@ def get_oauth_credentials():
     with open(properties_path, 'rb') as config_file:
         properties.load(config_file)
     
-    # Get service account file path - we'll use this for client secrets
-    client_secrets_file = os.path.join(base_path, 'property_files', 
-                                     properties.get('SERVICE_ACCOUNT_FILE').data)
+    # Use the same service account file path as defined in the main file
+    client_secrets_file = os.path.join(base_path, 'property_files', properties.get('SERVICE_ACCOUNT_FILE',
+                                                                                'calendar-automate-srvc-account-ref-file.json').data)
     
     token_path = os.path.join(base_path, 'token.pickle')
     
