@@ -324,20 +324,19 @@ def create_contact(contact_details):
             'phoneNumbers': phone_numbers,
             'biographies': [
                 {
-                    'value': contact_details['notes'],
+                    'value': contact_details.get('notes', ''),
                     'contentType': 'TEXT_PLAIN'
                 }
-            ] if contact_details['notes'] else []
+            ] if contact_details.get('notes') else []
         }
-        
+
         # Log the request details
         logging.info("Creating contact in personal Google Contacts")
         logging.info(f"Contact body: {json.dumps(contact_body, indent=2)}")
         
-        # Create the contact using People API with person contacts
+        # Create the contact using People API with person fields
         result = people_service.people().createContact(
-            body=contact_body,
-            personFields='names,emailAddresses,phoneNumbers,organizations,biographies'
+            body=contact_body
         ).execute()
         
         # Log the response
