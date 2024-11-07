@@ -36,21 +36,13 @@ def get_oauth_credentials():
     email = properties.get('GOOGLE_EMAIL').data
     password = properties.get('GOOGLE_APP_PASSWORD').data
     
-    # Use OAuth2 credentials
-    client_secrets = {
-        "installed": {
-            "client_id": email,
-            "client_secret": password,
-            "redirect_uris": ["http://localhost", "urn:ietf:wg:oauth:2.0:oob"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token"
-        }
-    }
-    
-    # Write temporary client secrets file
-    client_secrets_file = os.path.join(base_path, 'property_files', 'google_desktop_oauth_client_contacts_api.json')
-    with open(client_secrets_file, 'w') as f:
-        json.dump(client_secrets, f)
+    # Use existing client secrets file
+    client_secrets_file = os.path.join(base_path, 'property_files', 'client_secrets.json')
+    if not os.path.exists(client_secrets_file):
+        raise FileNotFoundError(
+            f"Client secrets file not found at {client_secrets_file}. "
+            "Please download it from Google Cloud Console and place it in the property_files directory."
+        )
     
     token_path = os.path.join(base_path, 'property_files', 'token.pickle')
     
