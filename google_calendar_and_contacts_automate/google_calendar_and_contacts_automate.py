@@ -333,9 +333,10 @@ def create_contact(contact_details):
         logging.info("Creating contact in personal Google Contacts")
         logging.info(f"Contact body: {json.dumps(contact_body, indent=2)}")
         
-        # Create the contact using People API
+        # Create the contact using People API with person contacts
         result = people_service.people().createContact(
-            body=contact_body
+            body=contact_body,
+            personFields='names,emailAddresses,phoneNumbers,organizations,biographies'
         ).execute()
         
         # Log the response
@@ -344,14 +345,16 @@ def create_contact(contact_details):
         # Get the contact URL
         resource_name = result.get('resourceName')
         if resource_name:
-            contact_url = f"https://contacts.google.com/{resource_name}"
+            # Extract the contact ID from resource name (format: people/{id})
+            contact_id = resource_name.split('/')[-1]
+            contact_url = f"https://contacts.google.com/person/{contact_id}"
             logging.info(f"Contact URL: {contact_url}")
             
-            # Show success message
+            # Show success message with direct contact URL
             root = tk.Tk()
             root.withdraw()
             messagebox.showinfo("Success", 
-                              f"Contact created successfully!\nView your contacts at: https://contacts.google.com/")
+                              f"Contact created successfully!\nView contact at: {contact_url}")
         
         return result
         
