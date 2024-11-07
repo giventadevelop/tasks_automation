@@ -51,7 +51,7 @@ except Exception as e:
 
 # Get the service account file path from the properties file
 service_account_file = os.path.join(base_path, 'property_files', properties.get('SERVICE_ACCOUNT_FILE',
-                                                                                'calendar-automate-srvc-account-ref-file.json'))
+                                                                                'calendar-automate-srvc-account-ref-file.json').data)
 
 # Get OAuth2 credentials
 credentials = get_oauth_credentials()
