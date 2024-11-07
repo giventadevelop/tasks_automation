@@ -36,7 +36,7 @@ def get_oauth_credentials():
                                       properties.get('SERVICE_ACCOUNT_FILE').data if properties.get('SERVICE_ACCOUNT_FILE')
                                       else 'calendar-automate-srvc-account-ref-file.json')
     
-    token_path = os.path.join(base_path, 'token.pickle')
+    token_path = os.path.join(base_path, 'property_files', 'token.pickle')
     
     # Check if we have valid credentials in the token file
     if os.path.exists(token_path):
