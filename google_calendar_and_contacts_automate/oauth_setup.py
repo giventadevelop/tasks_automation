@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import pickle
@@ -47,7 +48,7 @@ def get_oauth_credentials():
     }
     
     # Write temporary client secrets file
-    client_secrets_file = os.path.join(base_path, 'property_files', 'client_secrets.json')
+    client_secrets_file = os.path.join(base_path, 'property_files', 'google_desktop_oauth_client_contacts_api.json')
     with open(client_secrets_file, 'w') as f:
         json.dump(client_secrets, f)
     
