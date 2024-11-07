@@ -1,8 +1,6 @@
 import os
-import pickle
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+import sys
+from google.oauth2 import service_account
 
 SCOPES = [
     'https://www.googleapis.com/auth/calendar',
@@ -12,24 +10,33 @@ SCOPES = [
 ]
 
 def get_oauth_credentials():
-    """Gets valid user credentials from storage or initiates OAuth2 flow."""
-    creds = None
-    # The file token.pickle stores the user's access and refresh tokens
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
+    """Gets credentials from service account file."""
+    import json
+    from google.oauth2 import service_account
     
-    # If there are no (valid) credentials available, let the user log in
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+    # Get the properties file path
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
         
-        # Save the credentials for the next run
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-
+    # Read the properties file
+    from jproperties import Properties
+    properties = Properties()
+    properties_path = os.path.join(base_path, 'property_files', 'calendar_api_properties.properties')
+    
+    with open(properties_path, 'rb') as config_file:
+        properties.load(config_file)
+    
+    # Get service account file path
+    service_account_file = os.path.join(base_path, 'property_files', 
+                                      properties.get('SERVICE_ACCOUNT_FILE',
+                                      'calendar-automate-srvc-account-ref-file.json'))
+    
+    # Load credentials from service account file
+    creds = service_account.Credentials.from_service_account_file(
+        service_account_file,
+        scopes=SCOPES
+    )
+    
     return creds
