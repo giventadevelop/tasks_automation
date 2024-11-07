@@ -31,10 +31,25 @@ def get_oauth_credentials():
     with open(properties_path, 'rb') as config_file:
         properties.load(config_file)
     
-    # Use the same service account file path as defined in the main file
-    client_secrets_file = os.path.join(base_path, 'property_files',
-                                      properties.get('SERVICE_ACCOUNT_FILE').data if properties.get('SERVICE_ACCOUNT_FILE')
-                                      else 'calendar-automate-srvc-account-ref-file.json')
+    # Get credentials from properties file
+    email = properties.get('GOOGLE_EMAIL').data
+    password = properties.get('GOOGLE_APP_PASSWORD').data
+    
+    # Use OAuth2 credentials
+    client_secrets = {
+        "installed": {
+            "client_id": email,
+            "client_secret": password,
+            "redirect_uris": ["http://localhost", "urn:ietf:wg:oauth:2.0:oob"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
+    }
+    
+    # Write temporary client secrets file
+    client_secrets_file = os.path.join(base_path, 'property_files', 'client_secrets.json')
+    with open(client_secrets_file, 'w') as f:
+        json.dump(client_secrets, f)
     
     token_path = os.path.join(base_path, 'property_files', 'token.pickle')
     
