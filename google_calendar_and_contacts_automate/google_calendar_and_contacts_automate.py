@@ -303,7 +303,7 @@ def create_contact(contact_details):
                 'type': 'other'
             })
             
-        # Create contact body
+        # Create contact body for personal contacts
         contact_body = {
             'names': [
                 {
@@ -313,12 +313,14 @@ def create_contact(contact_details):
             ],
             'organizations': [
                 {
-                    'name': contact_details['companyName']
+                    'name': contact_details['companyName'],
+                    'type': 'work'
                 }
             ] if contact_details['companyName'] else [],
             'emailAddresses': [
                 {
-                    'value': contact_details['email']
+                    'value': contact_details['email'],
+                    'type': 'work'
                 }
             ] if contact_details.get('email') else [],
             'phoneNumbers': phone_numbers,
@@ -336,8 +338,22 @@ def create_contact(contact_details):
         
         # Create the contact using People API with person fields
         result = people_service.people().createContact(
-            body=contact_body
+            body=contact_body,
+            personFields='names,emailAddresses,phoneNumbers,organizations,biographies'
         ).execute()
+        
+        # Get the contact URL from resourceName
+        resource_name = result.get('resourceName', '')
+        if resource_name and resource_name.startswith('people/'):
+            contact_id = resource_name.split('/')[-1]
+            contact_url = f"https://contacts.google.com/person/{contact_id}"
+            logging.info(f"Contact created successfully. URL: {contact_url}")
+            
+            # Show success message with URL
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showinfo("Success", 
+                              f"Contact created successfully!\nView contact at: {contact_url}")
         
         # Log the response
         logging.info(f"Contact creation response: {json.dumps(result, indent=2)}")
