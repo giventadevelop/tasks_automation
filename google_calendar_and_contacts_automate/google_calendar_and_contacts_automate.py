@@ -344,35 +344,16 @@ def create_contact(contact_details):
         
         # Get the contact URL from resourceName
         resource_name = result.get('resourceName', '')
+        contact_url = ''
         if resource_name and resource_name.startswith('people/'):
             contact_id = resource_name.split('/')[-1]
             contact_url = f"https://contacts.google.com/person/{contact_id}"
             logging.info(f"Contact created successfully. URL: {contact_url}")
-            
-            # Show success message with URL
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showinfo("Success", 
-                              f"Contact created successfully!\nView contact at: {contact_url}")
         
         # Log the response
         logging.info(f"Contact creation response: {json.dumps(result, indent=2)}")
         
-        # Get the contact URL
-        resource_name = result.get('resourceName')
-        if resource_name:
-            # Extract the contact ID from resource name (format: people/{id})
-            contact_id = resource_name.split('/')[-1]
-            contact_url = f"https://contacts.google.com/person/{contact_id}"
-            logging.info(f"Contact URL: {contact_url}")
-            
-            # Show success message with direct contact URL
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showinfo("Success", 
-                              f"Contact created successfully!\nView contact at: {contact_url}")
-        
-        return result
+        return result, contact_url
         
     except Exception as e:
         logging.error(f"Error creating contact: {str(e)}")
@@ -1126,13 +1107,16 @@ def main():
             # Extract and process contact details
             contact_details = extract_contact_details(contact_text)
             
-            # Create the contact
-            create_contact(contact_details)
+            # Create the contact and get the URL
+            result, contact_url = create_contact(contact_details)
             
-            # Show success message
+            # Show single success message with URL if available
             root = tk.Tk()
             root.withdraw()
-            messagebox.showinfo("Success", "Contact created successfully!")
+            success_msg = "Contact created successfully!"
+            if contact_url:
+                success_msg += f"\nView contact at: {contact_url}"
+            messagebox.showinfo("Success", success_msg)
     except Exception as e:
         root = tk.Tk()
         root.withdraw()
