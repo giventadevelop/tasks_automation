@@ -1,0 +1,16 @@
+.aider*
+# Ignore Python bytecode files
+__pycache__/
+*.pyc
+
+# Ignore environment-specific files
+.env
+calendar-automate-434514-a1151c86364b-srvc-account.json
+calendar-automate-srvc-account-ref-file.json
+calendar_api_properties
+
+# Ignore build and dist folders
+build/
+dist/
+property_files/
+token.pickle

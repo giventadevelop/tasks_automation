@@ -1,0 +1,15 @@
+declineSummary:
+  accountNumber:
+    maxLength: 20
+    minLength: 9
+    pattern: ^(?!0{9,20}$)\\d{9,20}$
+    type: string
+    description: "Account Number that is between 9 and 20 digits long and disallows a value of repeating 9 or more zeros."
+    example: "849636820"
+  cardNumber:
+    maxLength: 16
+    minLength: 16
+    pattern: ^(?!0{16}$)\d{16}$
+    type: string
+    description: Card Number that is 16 digits long and disallows a value of 16 repeating zeros.
+    example: "8496368284963682"

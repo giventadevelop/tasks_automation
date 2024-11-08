@@ -39,23 +39,11 @@ def get_oauth_credentials():
     # Create or use existing client secrets file
     client_secrets_file = os.path.join(base_path, 'property_files', 'google_desktop_oauth_client_contacts_api.json')
     
-    # Create proper OAuth2 client configuration
-    client_secrets = {
-        "installed": {
-            "client_id": email,
-            "project_id": "calendar-3333-xxxxxx",  # Your actual project ID from Google Cloud Console
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_secret": password,
-            "redirect_uris": ["http://localhost", "urn:ietf:wg:oauth:2.0:oob"]
-        }
-    }
-    
-    # Write the client secrets file
-    with open(client_secrets_file, 'w') as f:
-        json.dump(client_secrets, f, indent=2)
-    
+    # Verify client secrets file exists
+    if not os.path.exists(client_secrets_file):
+        print(f"Error: Client secrets file not found at {client_secrets_file}")
+        sys.exit(1)
+
     token_path = os.path.join(base_path, 'property_files', 'token.pickle')
     
     # Check if we have valid credentials in the token file
