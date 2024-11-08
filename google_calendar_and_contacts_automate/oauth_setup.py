@@ -37,7 +37,7 @@ def get_oauth_credentials():
     password = properties.get('GOOGLE_APP_PASSWORD').data
     
     # Create or use existing client secrets file
-    client_secrets_file = os.path.join(base_path, 'property_files', 'client_secrets.json')
+    client_secrets_file = os.path.join(base_path, 'property_files', 'google_desktop_oauth_client_contacts_api.json')
     
     # Create proper OAuth2 client configuration
     client_secrets = {
