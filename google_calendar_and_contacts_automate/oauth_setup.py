@@ -54,7 +54,18 @@ def get_oauth_credentials():
     # If there are no (valid) credentials available, let the user log in
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"Token refresh failed: {str(e)}")
+                print("Initiating new authentication flow...")
+                # Delete invalid token file
+                if os.path.exists(token_path):
+                    os.remove(token_path)
+                # Start fresh authentication
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    client_secrets_file, SCOPES)
+                creds = flow.run_local_server(port=0)
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 client_secrets_file, SCOPES)
