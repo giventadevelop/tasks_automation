@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-  ['google_calendar_and_contacts_automate.py'],
+    ['google_calendar_and_contacts_automate.py'],
 pathex=['C:/Users/gain/git/python/tasks_automation/google_calendar_and_contacts_automate'],
 binaries=[],
 datas=[('C:/Users/gain/git/python/tasks_automation/google_calendar_and_contacts_automate/property_files/calendar-automate-srvc-account-ref-file.json','property_files'), ('C:/Users/gain/git/python/tasks_automation/google_calendar_and_contacts_automate/property_files/calendar_api_properties.properties','property_files'),
@@ -10,7 +10,6 @@ datas=[('C:/Users/gain/git/python/tasks_automation/google_calendar_and_contacts_
 ('C:/Users/gain/git/python/tasks_automation/google_calendar_and_contacts_automate/property_files/token.pickle','property_files')
  ],
 hiddenimports=[],
-
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
