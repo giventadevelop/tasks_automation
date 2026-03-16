@@ -1,0 +1,146 @@
+{
+  "Name": "Laundr+Order_1",
+  "CreationDate": "2025-4-14",
+  "Commands": [
+    {
+      "Command": "open",
+      "Target": "https://app.trycents.com/new-order/N3c4/home",
+      "Value": "",
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div",
+        "xpath=//div/div[2]/div",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/div/div/div[4]/div[3]/div/div[3]/button/span",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/div/div/div[4]/div[3]/div/div[3]/button/span",
+        "xpath=//button/span",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > div > div > div:nth-child(5) > div._wrapper_107gr_1 > div > div._listWrapper_135z3_20 > button > span._title_13smq_1"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=/html/body/div[8]/div[3]/div/div[2]/div[3]/div[3]/div/p",
+      "Value": "",
+      "Targets": [
+        "xpath=/html/body/div[8]/div[3]/div/div[2]/div[3]/div[3]/div/p",
+        "xpath=//div[3]/div[3]/div/p",
+        "css=body > div.MuiDrawer-root.MuiDrawer-modal.MuiModal-root.css-y28f86 > div.MuiPaper-root.MuiPaper-elevation.MuiPaper-elevation16.MuiDrawer-paper._drawer_wssva_1523.MuiDrawer-paperAnchorBottom.css-fy2uxz > div > div._drawer_1u9ca_1523 > div._addonsContainer_1u9ca_1570 > div:nth-child(3) > div > p"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=/html/body/div[8]/div[3]/div/div[2]/div[4]/button",
+      "Value": "",
+      "Targets": [
+        "xpath=/html/body/div[8]/div[3]/div/div[2]/div[4]/button",
+        "xpath=//div[4]/button",
+        "css=body > div.MuiDrawer-root.MuiDrawer-modal.MuiModal-root.css-y28f86 > div.MuiPaper-root.MuiPaper-elevation.MuiPaper-elevation16.MuiDrawer-paper._drawer_wssva_1523.MuiDrawer-paperAnchorBottom.css-fy2uxz > div > div._drawer_1u9ca_1523 > div._buttonContainer_1u9ca_1591 > button"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/div[2]/button",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/div[2]/button",
+        "xpath=//button[@type='button']",
+        "xpath=//div[2]/button",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > div._submitContainer_nbjm9_1625 > button"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"schedule-form\"]/div/div[2]/span",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"schedule-form\"]/div/div[2]/span",
+        "xpath=//div[2]/span",
+        "css=#schedule-form > div:nth-child(1) > div:nth-child(2) > span.additional-action-handler"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/section/div/div[2]/div[2]/div[5]/div/h4",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/section/div/div[2]/div[2]/div[5]/div/h4",
+        "xpath=//div[5]/div/h4",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > main > section > section > div > div.windows-container > div.window-selection-container.own-with-on-demand-variant > div:nth-child(5) > div.time-details > h4"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/aside/button",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/aside/button",
+        "xpath=//aside/button",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > main > section > aside > button"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main",
+        "xpath=//main",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > main"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main",
+        "xpath=//main",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > main"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/aside/button",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/aside/button",
+        "xpath=//button[@type='button']",
+        "xpath=//button",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > main > section > aside > button"
+      ],
+      "Description": ""
+    },
+    {
+      "Command": "click",
+      "Target": "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/section",
+      "Value": "",
+      "Targets": [
+        "xpath=//*[@id=\"root\"]/div/div/div[2]/div/main/section/section",
+        "xpath=//section/section",
+        "css=#root > div > div.ptr > div.ptr__children > div._serviceFirstOrderCreationContainer_xn3jk_1523 > main > section > section"
+      ],
+      "Description": ""
+    }
+  ]
+}
