@@ -12,4 +12,5 @@ calendar_api_properties
 # Ignore build and dist folders
 build/
 dist/
+/property_files/
 property_files/

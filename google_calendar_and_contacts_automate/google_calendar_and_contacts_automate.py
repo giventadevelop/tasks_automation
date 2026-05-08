@@ -4,7 +4,7 @@ import base64
 import requests
 import json
 import calendar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
@@ -109,6 +109,9 @@ calendar_service = build('calendar', 'v3', credentials=credentials)
 drive_service = build('drive', 'v3', credentials=credentials)
 people_service = build('people', 'v1', credentials=credentials)
 
+# Calendar ID for list/insert/delete (primary user calendar)
+CALENDAR_ID = 'giventauser@gmail.com'
+
 
 @retry(
     stop=stop_after_attempt(5),
@@ -122,7 +125,7 @@ def list_calendar_events():
 
         # Get events list
         events_result = calendar_service.events().list(
-            calendarId='giventauser@gmail.com',
+            calendarId=CALENDAR_ID,
             maxResults=10,
             singleEvents=True,
             orderBy='startTime'
@@ -154,6 +157,129 @@ def list_calendar_events():
         raise
 
 
+def get_upcoming_events_for_deletion(max_results=30):
+    """Fetch upcoming events for the delete dialog. Returns list of dicts with id, summary, start_str, recurringEventId."""
+    try:
+        events_result = calendar_service.events().list(
+            calendarId=CALENDAR_ID,
+            maxResults=max_results,
+            singleEvents=True,
+            orderBy='startTime',
+            timeMin=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        ).execute(num_retries=3)
+        events = events_result.get('items', [])
+        out = []
+        for event in events:
+            start = event.get('start', {})
+            start_str = start.get('dateTime', start.get('date', ''))
+            if start_str and 'T' in start_str:
+                try:
+                    dt = datetime.fromisoformat(start_str.replace('Z', '+00:00'))
+                    start_str = dt.strftime('%Y-%m-%d %H:%M')
+                except Exception:
+                    pass
+            out.append({
+                'id': event['id'],
+                'summary': event.get('summary', '(No title)'),
+                'start_str': start_str or '(No date)',
+                'recurringEventId': event.get('recurringEventId'),
+            })
+        return out
+    except Exception as e:
+        logging.error(f"Error fetching events for deletion: {e}")
+        raise
+
+
+# Reminder events created by this app use this pattern in the summary
+REMINDER_SUMMARY_MARKER = " - Reminder: "
+
+
+def _event_name_for_reminder_match(selected_event_summary):
+    """
+    Extract the event name used to find related reminders.
+    Main event format:  "EventName - 2026 March 17 (Tuesday)"
+    Reminder format:    "2026 March 17 (Tuesday) - Reminder: EventName"
+    We match reminders by EventName so we find them when deleting either the main event or a reminder.
+    """
+    if not selected_event_summary:
+        return ""
+    s = selected_event_summary.strip()
+    if REMINDER_SUMMARY_MARKER in s:
+        return s.split(REMINDER_SUMMARY_MARKER, 1)[-1].strip()
+    if " - " in s:
+        return s.split(" - ", 1)[0].strip()
+    return s
+
+
+def _list_reminder_event_ids_for_main_event(selected_event_summary):
+    """Find calendar event IDs for our app-created reminders (week/day/day-of) for this event."""
+    event_name = _event_name_for_reminder_match(selected_event_summary)
+    if not event_name:
+        return []
+    ids = set()  # use set to avoid deleting the same event twice (e.g. if selected item is a reminder)
+    try:
+        now_utc = datetime.now(timezone.utc)
+        time_min = (now_utc - timedelta(days=30)).isoformat().replace('+00:00', 'Z')
+        time_max = (now_utc + timedelta(days=400)).isoformat().replace('+00:00', 'Z')
+        page_token = None
+        while True:
+            result = calendar_service.events().list(
+                calendarId=CALENDAR_ID,
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy='startTime',
+                pageToken=page_token,
+                maxResults=250,
+            ).execute(num_retries=3)
+            for event in result.get('items', []):
+                summary = event.get('summary', '')
+                # Match our reminder events: they contain " - Reminder: " and the event name (e.g. "test1")
+                if REMINDER_SUMMARY_MARKER in summary and event_name in summary:
+                    ids.add(event['id'])
+            page_token = result.get('nextPageToken')
+            if not page_token:
+                break
+    except Exception as e:
+        logging.warning(f"Could not list reminder events for '{event_name}': {e}")
+    return list(ids)
+
+
+def delete_calendar_event(event_id, send_updates='all', event_summary=None):
+    """Delete a calendar event. If event_summary is provided, first deletes app-created reminder events for it."""
+    def do_delete(eid):
+        try:
+            calendar_service.events().delete(
+                calendarId=CALENDAR_ID,
+                eventId=eid,
+                sendUpdates=send_updates,
+            ).execute(num_retries=3)
+            return True
+        except HttpError as e:
+            if e.resp.status == 410:
+                logging.info(f"Event {eid} already deleted (410), skipping")
+                return True
+            raise
+        except Exception as e:
+            logging.warning(f"Could not delete event {eid}: {e}")
+            return False
+
+    if event_summary:
+        reminder_ids = _list_reminder_event_ids_for_main_event(event_summary)
+        for rid in reminder_ids:
+            if do_delete(rid):
+                logging.info(f"Deleted reminder event: {rid}")
+    # Delete the selected event (main or reminder); 410 = already gone, treat as success
+    try:
+        if do_delete(event_id):
+            logging.info(f"Deleted calendar event: {event_id}")
+    except HttpError as e:
+        if e.resp.status == 410:
+            logging.info(f"Event {event_id} already deleted (410)")
+        else:
+            raise
+
+
 def ensure_credentials_file():
     if not os.path.exists('credentials.json'):
         print("credentials.json not found. Please make sure you have the correct client configuration file.")
@@ -163,6 +289,165 @@ def ensure_credentials_file():
 
 
 # Anthropic API key will be read from .env file at runtime
+
+
+def show_delete_calendar_dialog():
+    """Dialog to pick an upcoming event and delete it (and its reminders). Recurring: delete one or full series."""
+    root = tk.Tk()
+    root.withdraw()
+    dialog = tk.Toplevel(root)
+    dialog.title("Delete Calendar Entry")
+    dialog.configure(bg='#ecf0f1')
+
+    screen_width = dialog.winfo_screenwidth()
+    screen_height = dialog.winfo_screenheight()
+    dialog_width = min(500, int(screen_width * 2/5))
+    dialog_height = min(450, int(screen_height * 1/2))
+
+    tk.Label(dialog, text="Select an event to delete (reminders are removed with the event):",
+             bg='#ecf0f1', font=('Helvetica', 10)).pack(pady=(10, 2))
+    tk.Label(dialog, text="Click an event in the list, then click \"Delete this event\" or \"Delete entire series\".",
+             bg='#ecf0f1', font=('Helvetica', 9), fg='#7f8c8d').pack(pady=(0, 5))
+
+    list_frame = tk.Frame(dialog, bg='#ecf0f1')
+    list_frame.pack(fill='both', expand=True, padx=10, pady=5)
+    scrollbar = tk.Scrollbar(list_frame)
+    scrollbar.pack(side='right', fill='y')
+    listbox = tk.Listbox(list_frame, height=12, font=('Consolas', 10),
+                        yscrollcommand=scrollbar.set, selectmode='single')
+    listbox.pack(side='left', fill='both', expand=True)
+    scrollbar.config(command=listbox.yview)
+
+    events_list = []
+    try:
+        events_list = get_upcoming_events_for_deletion(max_results=50)
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not load events:\n{str(e)}", parent=dialog)
+        dialog.destroy()
+        root.destroy()
+        return
+
+    if not events_list:
+        tk.Label(dialog, text="No upcoming events found.", bg='#ecf0f1', fg='#7f8c8d').pack(pady=10)
+    else:
+        for ev in events_list:
+            listbox.insert(tk.END, f"  {ev['start_str']}  |  {ev['summary']}")
+
+    # Keep last selected index (selection can be lost when a button takes focus)
+    last_selected_index = [None]
+
+    def on_list_select(event):
+        sel = listbox.curselection()
+        if sel:
+            last_selected_index[0] = int(sel[0])
+
+    listbox.bind('<<ListboxSelect>>', on_list_select)
+
+    def get_selected_event():
+        sel = listbox.curselection()
+        idx = int(sel[0]) if sel else last_selected_index[0]
+        if idx is not None and 0 <= idx < len(events_list):
+            return events_list[idx]
+        return None
+
+    def do_delete(this_occurrence_only=True):
+        ev = get_selected_event()
+        if not ev:
+            messagebox.showwarning("Select event", "Please select an event from the list.", parent=dialog)
+            return
+        event_id = ev['id'] if this_occurrence_only else ev.get('recurringEventId') or ev['id']
+        if not this_occurrence_only and not ev.get('recurringEventId'):
+            messagebox.showinfo("Not recurring", "This event is not part of a series.", parent=dialog)
+            return
+        msg = "Delete this occurrence only?" if (this_occurrence_only and ev.get('recurringEventId')) else (
+            "Delete the entire series (all occurrences)?" if ev.get('recurringEventId') else "Delete this event?"
+        )
+        # Use custom confirm dialog so it appears on top and is clearly visible
+        dialog.grab_release()
+        confirm_result = [None]  # use list so inner function can set it
+
+        confirm_win = tk.Toplevel(root)
+        confirm_win.title("Confirm delete")
+        confirm_win.configure(bg='#ecf0f1')
+        f = tk.Frame(confirm_win, bg='#ecf0f1', padx=24, pady=20)
+        f.pack(fill='both', expand=True)
+        tk.Label(f, text=msg, wraplength=340, padx=8, pady=12, bg='#ecf0f1',
+                 font=('Helvetica', 11)).pack()
+        btn_frame = tk.Frame(f, bg='#ecf0f1')
+        btn_frame.pack(pady=(12, 0))
+
+        def on_yes():
+            confirm_result[0] = True
+            confirm_win.destroy()
+
+        def on_no():
+            confirm_result[0] = False
+            confirm_win.destroy()
+
+        tk.Button(btn_frame, text="Yes, delete", command=on_yes, width=12,
+                  bg='#e74c3c', fg='white').pack(side='left', padx=8)
+        tk.Button(btn_frame, text="Cancel", command=on_no, width=12).pack(side='left', padx=8)
+        confirm_win.geometry("400x160")
+        # Center on screen and force on top so it is never hidden
+        confirm_win.update_idletasks()
+        w, h = 400, 160
+        x = (screen_width - w) // 2
+        y = (screen_height - h) // 2
+        confirm_win.geometry(f'{w}x{h}+{x}+{y}')
+        confirm_win.attributes('-topmost', True)
+        confirm_win.lift()
+        confirm_win.focus_force()
+        confirm_win.update_idletasks()
+        confirm_win.grab_set()
+        confirm_win.wait_window()
+        dialog.grab_set()
+
+        if not confirm_result[0]:
+            return
+        try:
+            delete_calendar_event(event_id, event_summary=ev.get('summary'))
+            # Release grab and close delete dialog before showing success (avoid "grab failed")
+            dialog.grab_release()
+            dialog.destroy()
+            try:
+                root.destroy()
+            except Exception:
+                pass
+            show_success_dialog("Deleted", "Calendar entry and its reminders were deleted.")
+        except Exception as e:
+            logging.error(f"Delete calendar event failed: {e}")
+            messagebox.showerror("Error", f"Failed to delete event:\n{str(e)}", parent=dialog)
+
+    btn_frame = tk.Frame(dialog, bg='#ecf0f1')
+    btn_frame.pack(fill='x', padx=10, pady=10)
+
+    def go_home():
+        dialog.destroy()
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+    tk.Button(btn_frame, text="Delete this event", bg='#e74c3c', fg='white',
+              command=lambda: do_delete(this_occurrence_only=True), width=18).pack(side='left', padx=4)
+    tk.Button(btn_frame, text="Delete entire series", bg='#c0392b', fg='white',
+              command=lambda: do_delete(this_occurrence_only=False), width=18).pack(side='left', padx=4)
+    tk.Button(btn_frame, text="Back to home", bg='#3498db', fg='white',
+              command=go_home, width=14).pack(side='right', padx=4)
+    tk.Button(btn_frame, text="Cancel", command=go_home, width=10).pack(side='right', padx=4)
+
+    x = (screen_width - dialog_width) // 2
+    y = (screen_height - dialog_height) // 2
+    dialog.geometry(f'{dialog_width}x{dialog_height}+{x}+{y}')
+    dialog.lift()
+    dialog.focus_force()
+    dialog.grab_set()
+    dialog.wait_window()
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
 
 def show_initial_dialog():
     root = tk.Tk()
@@ -213,12 +498,26 @@ def show_initial_dialog():
         result['choice'] = 'laundry'
         dialog.destroy()
 
+    def on_delete_calendar():
+        result['choice'] = 'delete_calendar'
+        dialog.destroy()
+
+    def on_exit():
+        result['choice'] = None
+        dialog.destroy()
+
     # Create and style buttons
     calendar_btn = tk.Button(content_frame, text="Calendar Entry",
                            bg='#3498db', fg='white',
                            activebackground='#2980b9',
                            command=on_calendar, **button_style)
     calendar_btn.pack(pady=10)
+
+    delete_calendar_btn = tk.Button(content_frame, text="Delete Calendar Entry",
+                                   bg='#9b59b6', fg='white',
+                                   activebackground='#8e44ad',
+                                   command=on_delete_calendar, **button_style)
+    delete_calendar_btn.pack(pady=10)
 
     contacts_btn = tk.Button(content_frame, text="Contact Entry",
                            bg='#2ecc71', fg='white',
@@ -231,6 +530,12 @@ def show_initial_dialog():
                            activebackground='#c0392b',
                            command=on_laundry, **button_style)
     laundry_btn.pack(pady=10)
+
+    exit_btn = tk.Button(content_frame, text="Exit",
+                         bg='#95a5a6', fg='white',
+                         activebackground='#7f8c8d',
+                         command=on_exit, **button_style)
+    exit_btn.pack(pady=10)
 
     # Center dialog
     x = (screen_width - dialog_width) // 2
@@ -352,9 +657,63 @@ def show_error_dialog(title, message):
     dialog.wait_window()
     root.destroy()
 
+def _get_message_text(message):
+    """Extract raw text from Anthropic API message content (handles different response shapes)."""
+    if not message.content:
+        return ""
+    text_parts = []
+    for block in message.content:
+        if hasattr(block, "text"):
+            text_parts.append(block.text)
+        elif isinstance(block, dict) and block.get("type") == "text":
+            text_parts.append(block.get("text", ""))
+    return "".join(text_parts).strip()
+
+
+def _parse_json_from_response(raw_text):
+    """Parse JSON from model response, handling markdown code blocks and extra text."""
+    if not raw_text:
+        raise ValueError("Empty response from model")
+    text = raw_text.strip()
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Extract JSON object (first { to matching })
+    start = text.find("{")
+    if start == -1:
+        raise ValueError(f"No JSON object in response: {text[:200]!r}")
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                json_str = text[start : i + 1]
+                # Remove common markdown/code block wrapping
+                if json_str.startswith("```"):
+                    lines = json_str.split("\n")
+                    json_str = "\n".join(l for l in lines if not l.strip().startswith("```"))
+                return json.loads(json_str)
+    raise ValueError(f"Unbalanced braces in response: {text[:200]!r}")
+
+
+def _get_anthropic_api_key():
+    """Get Anthropic API key from environment variable ANTHROPIC_API_KEY."""
+    key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if not key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY is not set. Set the ANTHROPIC_API_KEY environment variable."
+        )
+    return key
+
+
 def extract_contact_details(contact_text):
     try:
-        client = anthropic.Anthropic(api_key=properties.get('ANTHROPIC_API_KEY').data)
+        api_key = _get_anthropic_api_key()
+        client = anthropic.Anthropic(api_key=api_key)
 
         prompt = """Extract contact information from the following text. Format the response as a JSON object with these fields: firstName, lastName, companyName, phonenumbers (array), and notes. If any field is not found, use an empty string or empty array. Include all original text in the notes field.
 
@@ -373,7 +732,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 
         try:
             message = client.messages.create(
-                model="claude-3-opus-20240229",
+                model="claude-sonnet-4-6",
                 max_tokens=1000,
                 messages=[
                     {
@@ -394,8 +753,8 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 show_error_dialog("Service Error", error_msg)
                 raise Exception(error_msg)
 
-        result = message.content[0].text.strip()
-        contact_details = json.loads(result)
+        result = _get_message_text(message)
+        contact_details = _parse_json_from_response(result)
 
         # Show edit dialog
         root = tk.Tk()
@@ -606,22 +965,12 @@ def extract_event_details(input_type, event_text, image_path):
             base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             properties_dir = 'property_files'
 
-        # Read properties file
-        properties_path = os.path.join(base_path, properties_dir, 'calendar_api_properties.properties')
-        logging.info(f"Reading properties from: {properties_path}")
-
-        try:
-            with open(properties_path, 'r') as f:
-                properties = dict(line.strip().split('=') for line in f if '=' in line)
-            api_key = properties.get('ANTHROPIC_API_KEY')
-            logging.info("Successfully read properties file")
-        except Exception as e:
-            error_msg = f"Error reading properties file: {str(e)}"
-            logging.error(error_msg)
-            raise Exception(error_msg)
-
+        # Read API key from environment variable only
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
         if not api_key:
-            error_msg = "ANTHROPIC_API_KEY not found in properties file"
+            error_msg = (
+                "ANTHROPIC_API_KEY is not set. Set the ANTHROPIC_API_KEY environment variable."
+            )
             logging.error(error_msg)
             raise Exception(error_msg)
 
@@ -649,7 +998,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
         if input_type == "image":
             base64_image = encode_image(image_path)
             message = client.messages.create(
-                model="claude-3-opus-20240229",
+                model="claude-sonnet-4-6",
                 max_tokens=1000,
                 messages=[
                     {
@@ -673,7 +1022,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             )
         else:  # input_type == "text"
             message = client.messages.create(
-                model="claude-3-opus-20240229",
+                model="claude-sonnet-4-6",
                 max_tokens=1000,
                 messages=[
                     {
@@ -688,171 +1037,124 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 ]
             )
 
-        # Extract the response text from the message and clean it
-        result = message.content[0].text.strip()
-
-        # Find the JSON content within the response
+        result = _get_message_text(message)
         try:
-            # First try to parse the entire response as JSON
-            event_details = json.loads(result)
-        except json.JSONDecodeError:
-            # If that fails, try to extract and clean JSON from the response
-            json_start = result.find('{')
-            json_end = result.rfind('}') + 1
+            event_details = _parse_json_from_response(result)
+            # Create and show edit dialog
+            root = tk.Tk()
+            root.withdraw()  # Hide the main window
+            edit_dialog = tk.Toplevel(root)
+            edit_dialog.title("Edit Event Details")
+            edit_dialog.lift()  # Bring dialog to front
+            edit_dialog.focus_force()  # Force focus on dialog
 
-            if json_start == -1 or json_end == 0:
-                logging.error("No JSON content found in response")
-                raise ValueError("Invalid response format")
+            # Create form fields
+            fields = {}
+            row = 0
 
-            json_str = result[json_start:json_end]
+            # Event Name
+            tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
+            fields['eventName'] = tk.Entry(edit_dialog, width=40)
+            fields['eventName'].insert(0, event_details.get('eventName', ''))
+            fields['eventName'].grid(row=row, column=1, padx=5, pady=5)
+            row += 1
 
-            # More aggressive cleanup of common formatting issuesn
-            json_str = (json_str
-                       .replace('\n', '')
-                       .replace('            ', '')
-                       .replace('        ', '')
-                       .replace('    ', '')
-                       .strip())
+            # Date
+            tk.Label(edit_dialog, text="Date (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5)
+            fields['date'] = tk.Entry(edit_dialog, width=40)
+            fields['date'].insert(0, event_details.get('date', ''))
+            fields['date'].grid(row=row, column=1, padx=5, pady=5)
+            row += 1
 
-            # Remove any trailing commas before closing braces
-            json_str = json_str.replace(',}', '}').replace(',]', ']')
+            # Start Time
+            tk.Label(edit_dialog, text="Start Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
+            fields['startTime'] = tk.Entry(edit_dialog, width=40)
+            fields['startTime'].insert(0, event_details.get('startTime', ''))
+            fields['startTime'].grid(row=row, column=1, padx=5, pady=5)
+            row += 1
 
-            try:
-                event_details = json.loads(json_str)
+            # End Time
+            tk.Label(edit_dialog, text="End Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
+            fields['endTime'] = tk.Entry(edit_dialog, width=40)
+            fields['endTime'].insert(0, event_details.get('endTime', ''))
+            fields['endTime'].grid(row=row, column=1, padx=5, pady=5)
+            row += 1
 
-                # Create and show edit dialog
-                root = tk.Tk()
-                root.withdraw()  # Hide the main window
-                edit_dialog = tk.Toplevel(root)
-                edit_dialog.title("Edit Event Details")
-                edit_dialog.lift()  # Bring dialog to front
-                edit_dialog.focus_force()  # Force focus on dialog
+            # Venue
+            tk.Label(edit_dialog, text="Venue:").grid(row=row, column=0, padx=5, pady=5)
+            fields['venue'] = tk.Entry(edit_dialog, width=40)
+            fields['venue'].insert(0, event_details.get('venue', ''))
+            fields['venue'].grid(row=row, column=1, padx=5, pady=5)
+            row += 1
 
-                # Create form fields
-                fields = {}
-                row = 0
+            # Contacts
+            tk.Label(edit_dialog, text="Contacts:").grid(row=row, column=0, padx=5, pady=5)
+            contacts_text = tk.Text(edit_dialog, width=40, height=4)
+            contacts = event_details.get('contacts', [])
+            contacts_str = '\n'.join([f"{c.get('name', '')}-{c.get('phone', '')}" for c in contacts])
+            contacts_text.insert('1.0', contacts_str)
+            contacts_text.grid(row=row, column=1, padx=5, pady=5)
+            fields['contacts'] = contacts_text
+            row += 1
 
-                # Event Name
-                tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
-                fields['eventName'] = tk.Entry(edit_dialog, width=40)
-                fields['eventName'].insert(0, event_details.get('eventName', ''))
-                fields['eventName'].grid(row=row, column=1, padx=5, pady=5)
-                row += 1
+            # Other Details
+            tk.Label(edit_dialog, text="Other Details:").grid(row=row, column=0, padx=5, pady=5)
+            other_details = tk.Text(edit_dialog, width=40, height=4)
+            other_details.insert('1.0', event_details.get('otherDetails', ''))
+            other_details.grid(row=row, column=1, padx=5, pady=5)
+            fields['otherDetails'] = other_details
+            row += 1
 
-                # Date
-                tk.Label(edit_dialog, text="Date (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5)
-                fields['date'] = tk.Entry(edit_dialog, width=40)
-                fields['date'].insert(0, event_details.get('date', ''))
-                fields['date'].grid(row=row, column=1, padx=5, pady=5)
-                row += 1
+            def on_submit():
+                # Update event_details with edited values
+                event_details['eventName'] = fields['eventName'].get()
+                event_details['date'] = fields['date'].get()
+                event_details['startTime'] = fields['startTime'].get()
+                event_details['endTime'] = fields['endTime'].get()
+                event_details['venue'] = fields['venue'].get()
 
-                # Start Time
-                tk.Label(edit_dialog, text="Start Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
-                fields['startTime'] = tk.Entry(edit_dialog, width=40)
-                fields['startTime'].insert(0, event_details.get('startTime', ''))
-                fields['startTime'].grid(row=row, column=1, padx=5, pady=5)
-                row += 1
+                # Parse contacts from text
+                contacts_text = fields['contacts'].get('1.0', tk.END).strip()
+                contacts = []
+                for line in contacts_text.split('\n'):
+                    if '-' in line:
+                        name, phone = line.split('-', 1)
+                        contacts.append({'name': name.strip(), 'phone': phone.strip()})
+                event_details['contacts'] = contacts
 
-                # End Time
-                tk.Label(edit_dialog, text="End Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
-                fields['endTime'] = tk.Entry(edit_dialog, width=40)
-                fields['endTime'].insert(0, event_details.get('endTime', ''))
-                fields['endTime'].grid(row=row, column=1, padx=5, pady=5)
-                row += 1
+                # Get other details
+                event_details['otherDetails'] = fields['otherDetails'].get('1.0', tk.END).strip()
 
-                # Venue
-                tk.Label(edit_dialog, text="Venue:").grid(row=row, column=0, padx=5, pady=5)
-                fields['venue'] = tk.Entry(edit_dialog, width=40)
-                fields['venue'].insert(0, event_details.get('venue', ''))
-                fields['venue'].grid(row=row, column=1, padx=5, pady=5)
-                row += 1
+                edit_dialog.destroy()
 
-                # Contacts
-                tk.Label(edit_dialog, text="Contacts:").grid(row=row, column=0, padx=5, pady=5)
-                contacts_text = tk.Text(edit_dialog, width=40, height=4)
-                contacts = event_details.get('contacts', [])
-                contacts_str = '\n'.join([f"{c.get('name', '')}-{c.get('phone', '')}" for c in contacts])
-                contacts_text.insert('1.0', contacts_str)
-                contacts_text.grid(row=row, column=1, padx=5, pady=5)
-                fields['contacts'] = contacts_text
-                row += 1
+            # Submit button
+            submit_btn = tk.Button(edit_dialog, text="Submit", command=on_submit)
+            submit_btn.grid(row=row, column=0, columnspan=2, pady=20)
 
-                # Other Details
-                tk.Label(edit_dialog, text="Other Details:").grid(row=row, column=0, padx=5, pady=5)
-                other_details = tk.Text(edit_dialog, width=40, height=4)
-                other_details.insert('1.0', event_details.get('otherDetails', ''))
-                other_details.grid(row=row, column=1, padx=5, pady=5)
-                fields['otherDetails'] = other_details
-                row += 1
+            # Center the dialog
+            edit_dialog.geometry("600x700")
+            edit_dialog.update_idletasks()
+            width = edit_dialog.winfo_width()
+            height = edit_dialog.winfo_height()
+            x = (edit_dialog.winfo_screenwidth() // 2) - (width // 2)
+            y = (edit_dialog.winfo_screenheight() // 2) - (height // 2)
+            edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
 
-                def on_submit():
-                    # Update event_details with edited values
-                    event_details['eventName'] = fields['eventName'].get()
-                    event_details['date'] = fields['date'].get()
-                    event_details['startTime'] = fields['startTime'].get()
-                    event_details['endTime'] = fields['endTime'].get()
-                    event_details['venue'] = fields['venue'].get()
+            # Wait for dialog to close
+            edit_dialog.grab_set()  # Make dialog modal
+            edit_dialog.wait_window()
+            root.destroy()  # Clean up the root window
 
-                    # Parse contacts from text
-                    contacts_text = fields['contacts'].get('1.0', tk.END).strip()
-                    contacts = []
-                    for line in contacts_text.split('\n'):
-                        if '-' in line:
-                            name, phone = line.split('-', 1)
-                            contacts.append({'name': name.strip(), 'phone': phone.strip()})
-                    event_details['contacts'] = contacts
-
-                    # Get other details
-                    event_details['otherDetails'] = fields['otherDetails'].get('1.0', tk.END).strip()
-
-                    edit_dialog.destroy()
-
-                # Submit button
-                submit_btn = tk.Button(edit_dialog, text="Submit", command=on_submit)
-                submit_btn.grid(row=row, column=0, columnspan=2, pady=20)
-
-                # Center the dialog
-                edit_dialog.geometry("600x700")
-                edit_dialog.update_idletasks()
-                width = edit_dialog.winfo_width()
-                height = edit_dialog.winfo_height()
-                x = (edit_dialog.winfo_screenwidth() // 2) - (width // 2)
-                y = (edit_dialog.winfo_screenheight() // 2) - (height // 2)
-                edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
-
-                # Wait for dialog to close
-                edit_dialog.grab_set()  # Make dialog modal
-                edit_dialog.wait_window()
-                root.destroy()  # Clean up the root window
-
-            except json.JSONDecodeError as e:
-                # If still failing, try an even more aggressive cleanup
-                json_str = ''.join(c for c in json_str if not c.isspace())
-                try:
-                    event_details = json.loads(json_str)
-                except json.JSONDecodeError:
-                    logging.error(f"Failed to parse JSON after cleanup: {json_str}")
-                    logging.error(f"JSON Error: {str(e)}")
-                    # Instead of raising an error, return default values
-                    event_details = {
-                        'eventName': 'Unnamed Event',
-                        'date': datetime.now().strftime('%Y-%m-%d'),
-                        'startTime': '09:30 AM',
-                        'endTime': '10:30 AM',
-                        'venue': '@home_default',
-                        'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}],
-                        'otherDetails': 'No additional details provided'
-                    }
-        except json.JSONDecodeError as e:
-            logging.error(f"JSON Error: {str(e)}")
-            # Provide default event details
+        except (ValueError, json.JSONDecodeError) as e:
+            logging.error(f"Failed to parse model response: {e}")
             event_details = {
                 'eventName': 'Unnamed Event',
                 'date': datetime.now().strftime('%Y-%m-%d'),
                 'startTime': '09:30 AM',
                 'endTime': '10:30 AM',
                 'venue': '@home_default',
-                'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}]
+                'contacts': [{'name': 'Default Contact', 'phone': 'N/A'}],
+                'otherDetails': 'No additional details provided'
             }
 
         # Check for both possible event name keys
@@ -989,110 +1291,7 @@ def create_calendar_event(calendar_service, drive_service, event_details, file_p
             event_datetime = current_date.replace(hour=9, minute=30)
             event_end_datetime = current_date.replace(hour=10, minute=30)
 
-        # Create and show edit dialog
-        root = tk.Tk()
-        root.withdraw()  # Hide the main window
-        edit_dialog = tk.Toplevel(root)
-        edit_dialog.title("Edit Event Details")
-        edit_dialog.lift()  # Bring dialog to front
-        edit_dialog.focus_force()  # Force focus on dialog
-
-        # Create form fields
-        fields = {}
-        row = 0
-
-        # Event Name
-        tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
-        fields['eventName'] = tk.Entry(edit_dialog, width=40)
-        fields['eventName'].insert(0, event_details.get('eventName', ''))
-        fields['eventName'].grid(row=row, column=1, padx=5, pady=5)
-        row += 1
-
-        # Date
-        tk.Label(edit_dialog, text="Date (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5)
-        fields['date'] = tk.Entry(edit_dialog, width=40)
-        fields['date'].insert(0, event_details.get('date', ''))
-        fields['date'].grid(row=row, column=1, padx=5, pady=5)
-        row += 1
-
-        # Start Time
-        tk.Label(edit_dialog, text="Start Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
-        fields['startTime'] = tk.Entry(edit_dialog, width=40)
-        fields['startTime'].insert(0, event_details.get('startTime', ''))
-        fields['startTime'].grid(row=row, column=1, padx=5, pady=5)
-        row += 1
-
-        # End Time
-        tk.Label(edit_dialog, text="End Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
-        fields['endTime'] = tk.Entry(edit_dialog, width=40)
-        fields['endTime'].insert(0, event_details.get('endTime', ''))
-        fields['endTime'].grid(row=row, column=1, padx=5, pady=5)
-        row += 1
-
-        # Venue
-        tk.Label(edit_dialog, text="Venue:").grid(row=row, column=0, padx=5, pady=5)
-        fields['venue'] = tk.Entry(edit_dialog, width=40)
-        fields['venue'].insert(0, event_details.get('venue', ''))
-        fields['venue'].grid(row=row, column=1, padx=5, pady=5)
-        row += 1
-
-        # Contacts
-        tk.Label(edit_dialog, text="Contacts:").grid(row=row, column=0, padx=5, pady=5)
-        contacts_text = tk.Text(edit_dialog, width=40, height=4)
-        contacts = event_details.get('contacts', [])
-        contacts_str = '\n'.join([f"{c.get('name', '')}-{c.get('phone', '')}" for c in contacts])
-        contacts_text.insert('1.0', contacts_str)
-        contacts_text.grid(row=row, column=1, padx=5, pady=5)
-        fields['contacts'] = contacts_text
-        row += 1
-
-        # Other Details
-        tk.Label(edit_dialog, text="Other Details:").grid(row=row, column=0, padx=5, pady=5)
-        other_details = tk.Text(edit_dialog, width=40, height=4)
-        other_details.insert('1.0', event_details.get('otherDetails', ''))
-        other_details.grid(row=row, column=1, padx=5, pady=5)
-        fields['otherDetails'] = other_details
-        row += 1
-
-        def on_submit():
-            # Update event_details with edited values
-            event_details['eventName'] = fields['eventName'].get()
-            event_details['date'] = fields['date'].get()
-            event_details['startTime'] = fields['startTime'].get()
-            event_details['endTime'] = fields['endTime'].get()
-            event_details['venue'] = fields['venue'].get()
-
-            # Parse contacts from text
-            contacts_text = fields['contacts'].get('1.0', tk.END).strip()
-            contacts = []
-            for line in contacts_text.split('\n'):
-                if '-' in line:
-                    name, phone = line.split('-', 1)
-                    contacts.append({'name': name.strip(), 'phone': phone.strip()})
-            event_details['contacts'] = contacts
-
-            # Get other details
-            event_details['otherDetails'] = fields['otherDetails'].get('1.0', tk.END).strip()
-
-            edit_dialog.destroy()
-
-        # Submit button
-        submit_btn = tk.Button(edit_dialog, text="Submit", command=on_submit)
-        submit_btn.grid(row=row, column=0, columnspan=2, pady=20)
-
-        # Center the dialog
-        edit_dialog.geometry("600x700")
-        edit_dialog.update_idletasks()
-        width = edit_dialog.winfo_width()
-        height = edit_dialog.winfo_height()
-        x = (edit_dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (edit_dialog.winfo_screenheight() // 2) - (height // 2)
-        edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
-
-        # Wait for dialog to close
-        edit_dialog.grab_set()  # Make dialog modal
-        edit_dialog.wait_window()
-        root.destroy()  # Clean up the root window
+        # event_details already confirmed in extract_event_details; no second dialog
 
         # Parse the dates and times with better error handling
         try:
@@ -1302,16 +1501,33 @@ def show_success_dialog(title, message):
                         wraplength=dialog_width-60)
     msg_label.pack(pady=(20, 30))
 
-    # Styled OK button
-    ok_button = tk.Button(content_frame, text="OK",
+    # Button frame: OK and Back to home
+    success_btn_frame = tk.Frame(content_frame, bg='#ecf0f1')
+    success_btn_frame.pack(pady=(0, 20))
+
+    def close_success():
+        dialog.destroy()
+        root.destroy()
+
+    ok_button = tk.Button(success_btn_frame, text="OK",
                          bg='#3498db', fg='white',
                          activebackground='#2980b9',
                          font=('Helvetica', 12, 'bold'),
-                         width=15, height=1,
+                         width=12, height=1,
                          relief='raised',
                          borderwidth=3,
-                         command=dialog.destroy)
-    ok_button.pack(pady=(0, 20))
+                         command=close_success)
+    ok_button.pack(side='left', padx=8)
+
+    back_home_btn = tk.Button(success_btn_frame, text="Back to home",
+                              bg='#2ecc71', fg='white',
+                              activebackground='#27ae60',
+                              font=('Helvetica', 12, 'bold'),
+                              width=14, height=1,
+                              relief='raised',
+                              borderwidth=3,
+                              command=close_success)
+    back_home_btn.pack(side='left', padx=8)
 
     # Center dialog
     x = (screen_width - dialog_width) // 2
@@ -1321,7 +1537,10 @@ def show_success_dialog(title, message):
     # Make dialog modal
     dialog.grab_set()
     dialog.wait_window()
-    root.destroy()
+    try:
+        root.destroy()
+    except Exception:
+        pass
 
 
 def show_contact_url_dialog(title, message):
@@ -1362,31 +1581,44 @@ def show_contact_url_dialog(title, message):
                         justify='center')  # Center-align text
     msg_label.pack(pady=(20, 30))
 
-    # Create a frame for the button to add a hover effect
+    # Create a frame for the buttons
     button_frame = tk.Frame(content_frame, bg='#ecf0f1')
     button_frame.pack(pady=(0, 20))
 
-    # Styled OK button - much bigger size
+    def close_contact_url():
+        dialog.destroy()
+        root.destroy()
+
+    # Styled OK and Back to home buttons
     ok_button = tk.Button(button_frame, text="OK",
                          bg='#3498db', fg='white',
                          activebackground='#2980b9',
-                         font=('Helvetica', 16, 'bold'),  # Increased font size
-                         width=25, height=2,  # Increased width and height
+                         font=('Helvetica', 16, 'bold'),
+                         width=25, height=2,
                          relief='raised',
-                         borderwidth=4,  # Thicker border
-                         cursor='hand2')  # Hand cursor on hover
-    ok_button.pack(pady=10, ipady=10)  # Added internal padding
+                         borderwidth=4,
+                         cursor='hand2',
+                         command=close_contact_url)
+    ok_button.pack(pady=10, ipady=10)
 
-    # Add hover effect
+    back_home_btn = tk.Button(button_frame, text="Back to home",
+                              bg='#2ecc71', fg='white',
+                              activebackground='#27ae60',
+                              font=('Helvetica', 14, 'bold'),
+                              width=20, height=2,
+                              relief='raised',
+                              borderwidth=4,
+                              cursor='hand2',
+                              command=close_contact_url)
+    back_home_btn.pack(pady=6)
+
+    # Add hover effect for OK
     def on_enter(e):
         ok_button['background'] = '#2980b9'
-
     def on_leave(e):
         ok_button['background'] = '#3498db'
-
     ok_button.bind("<Enter>", on_enter)
     ok_button.bind("<Leave>", on_leave)
-    ok_button['command'] = dialog.destroy
 
     # Center dialog
     x = (screen_width - dialog_width) // 2
@@ -1396,88 +1628,93 @@ def show_contact_url_dialog(title, message):
     # Make dialog modal
     dialog.grab_set()
     dialog.wait_window()
-    root.destroy()
+    try:
+        root.destroy()
+    except Exception:
+        pass
 
 
 def main():
     try:
         global event_details
-        # Show initial dialog
-        choice = show_initial_dialog()
+        while True:
+            choice = show_initial_dialog()
+            if choice is None:
+                break
 
-        if choice == 'calendar':
-            # Get user input for calendar
-            input_type, event_text, image_path = get_event_input()
+            if choice == 'calendar':
+                # Get user input for calendar
+                input_type, event_text, image_path = get_event_input()
 
-            # Extract event details
-            event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
+                # Extract event details
+                event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
 
-            # Print the extracted details for confirmation
-            print(f"Extracted Event: {event_name}")
-            print(f"Date and Time: {event_datetime}")
-            print(f"Venue: {venue}")
-            print(f"Contact List: {contact_list}")
+                # Print the extracted details for confirmation
+                print(f"Extracted Event: {event_name}")
+                print(f"Date and Time: {event_datetime}")
+                print(f"Venue: {venue}")
+                print(f"Contact List: {contact_list}")
 
-            # List calendar events using service account
-            print("\nListing calendar events:")
-            list_calendar_events()
+                # List calendar events using service account
+                print("\nListing calendar events:")
+                list_calendar_events()
 
-            # Create calendar event using service account
-            print("\nCreating calendar event:")
-            create_calendar_event(calendar_service, drive_service, event_details, file_path=image_path)
+                # Create calendar event using service account
+                print("\nCreating calendar event:")
+                create_calendar_event(calendar_service, drive_service, event_details, file_path=image_path)
 
-            # Show success message
-            show_success_dialog("Success", "Calendar entry added successfully!")
+                # Show success message (OK or Back to home returns to initial dialog)
+                show_success_dialog("Success", "Calendar entry added successfully!")
 
-        elif choice == 'contacts':
-            # Get contact input
-            contact_text = get_contact_input()
+            elif choice == 'delete_calendar':
+                show_delete_calendar_dialog()
 
-            # Extract and process contact details
-            contact_details = extract_contact_details(contact_text)
+            elif choice == 'contacts':
+                # Get contact input
+                contact_text = get_contact_input()
 
-            # Create the contact and get the URL
-            result, contact_url = create_contact(contact_details)
+                # Extract and process contact details
+                contact_details = extract_contact_details(contact_text)
 
-            # Show success message
-            show_success_dialog("Success", "Contact created successfully!")
-            if contact_url:
-                show_contact_url_dialog("Contact URL", f"View contact at:\n{contact_url}")
+                # Create the contact and get the URL
+                result, contact_url = create_contact(contact_details)
 
-        elif choice == 'laundry':
-            print("\nStarting Laundry Automation...")
-            logging.info("Starting Laundry Automation...")
+                # Show success message
+                show_success_dialog("Success", "Contact created successfully!")
+                if contact_url:
+                    show_contact_url_dialog("Contact URL", f"View contact at:\n{contact_url}")
 
-            try:
-                if getattr(sys, 'frozen', False):
-                    # If running as exe, import directly
-                    import laundry_automation
-                else:
-                    # If running from IDE, add Laundry_TryCents to path
-                    laundry_path = os.path.join(base_path, 'Laundry_TryCents')
-                    if laundry_path not in sys.path:
-                        sys.path.append(laundry_path)
-                    import laundry_automation
-
-                logging.info("Imported laundry automation module")
-
-                # Run the main function
-                laundry_automation.main()
-                print("Laundry automation completed.")
-                logging.info("Laundry automation completed.")
-                time.sleep(20)  # Wait 20 seconds before exiting
-            except ImportError as e:
-                error_msg = f"Failed to import laundry automation module: {e}\nPaths: {sys.path}"
-                logging.error(error_msg)
-                messagebox.showerror("Error", error_msg)
-            except Exception as e:
-                error_msg = f"Unexpected error in laundry automation: {e}"
-                logging.error(error_msg)
-                messagebox.showerror("Error", error_msg)
-            finally:
-                print("Exiting program...")
-                logging.info("Exiting program...")
-                sys.exit(0)
+            elif choice == 'laundry':
+                import subprocess
+                laundry_path = os.path.join(base_path, 'Laundry_TryCents')
+                laundry_main = os.path.join(laundry_path, 'laundry_automation.py')
+                if not os.path.isfile(laundry_main):
+                    messagebox.showerror("Error", f"Laundry automation not found at:\n{laundry_main}")
+                    continue
+                # Run laundry in a subprocess so the main app stays responsive and doesn't block
+                try:
+                    env = os.environ.copy()
+                    env['PYTHONPATH'] = (env.get('PYTHONPATH') or '') + os.pathsep + laundry_path
+                    cmd = [sys.executable, laundry_main]
+                    if sys.platform == 'win32':
+                        subprocess.Popen(
+                            cmd,
+                            cwd=laundry_path,
+                            env=env,
+                            creationflags=subprocess.CREATE_NEW_CONSOLE,
+                        )
+                    else:
+                        subprocess.Popen(cmd, cwd=laundry_path, env=env)
+                    logging.info("Launched Laundry Automation in subprocess")
+                    messagebox.showinfo(
+                        "Laundry Automation",
+                        "Laundry automation has been started in a separate window.\n\n"
+                        "A console and Chrome browser should open shortly. If nothing appears, "
+                        "check the Laundry_TryCents folder and run laundry_automation.py from there.",
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to start laundry automation: {e}")
+                    messagebox.showerror("Error", f"Could not start laundry automation:\n{str(e)}")
 
     except Exception as e:
         root = tk.Tk()

@@ -124,7 +124,9 @@ def main():
             (By.XPATH, '//*[@id="root"]/div/div[1]/div[2]/div[1]/div/div[4]/button'),
             (By.XPATH, "//button[contains(text(), 'New Order')]"),
             (By.XPATH, "//button[text()='New Order']"),
-            (By.CSS_SELECTOR, "button.MuiButton-root:contains('New Order')")
+            (By.CSS_SELECTOR, "button.MuiButton-root:contains('New Order')"),
+            # Fallback: sidebar/new-order element if primary button not found (e.g. different page state)
+            (By.XPATH, '//*[@id="root"]/div/div[1]/div[2]/div[1]/div/div[2]/div/div/div[4]/div[5]/div'),
         ]
 
         clicked = False
@@ -136,31 +138,68 @@ def main():
         if not clicked:
             raise Exception("Failed to click New Order")
 
-        print("Clicked New Order button")
+        # If we used the fallback div, we still continue with the same order flow
+        print("Clicked New Order button (or fallback element), continuing with order flow...")
         time.sleep(3)  # Wait for next page
 
-        # Click Wash and Fold section
+        # Click Wash and Fold section (try multiple selectors; layout can vary)
         print("Looking for Wash and Fold section...")
-        wash_fold_section = (By.XPATH, '//*[@id="root"]/div/div[1]/div[2]/div[1]/main/section/div[3]/div[3]/div/div[3]/button')
-        if not click_element(driver, wash_fold_section, wait_time=5):
+        wash_fold_selectors = [
+            (By.XPATH, '//*[@id="root"]/div/div[1]/div[2]/div[1]/main/section/div[3]/div[3]/div/div[3]/button'),
+            (By.XPATH, "//button[contains(., 'Wash and Fold')]"),
+            (By.XPATH, "//*[contains(text(), 'Wash and Fold')]/ancestor::button"),
+            (By.XPATH, "//*[contains(text(), 'Laundry')][contains(., 'Wash') or contains(., 'Fold')]/ancestor::button"),
+            (By.XPATH, "//button[contains(., 'Laundry')]"),
+            (By.XPATH, "//*[contains(text(), 'Wash and Fold')]/ancestor::*[self::div[@role='button'] or self::div[button]]"),
+        ]
+        wash_fold_clicked = False
+        for sel in wash_fold_selectors:
+            if click_element(driver, sel, wait_time=5):
+                wash_fold_clicked = True
+                break
+        if not wash_fold_clicked:
             raise Exception("Failed to click Wash and Fold")
         print("Clicked Wash and Fold section")
-        time.sleep(3)  # Wait for next section
+        time.sleep(3)  # Wait for detergent dialog
 
-        # Click Gain Detergent option
-        print("Looking for Gain Detergent option...")
-        gain_detergent = (By.XPATH, "/html/body/div[8]/div[3]/div/div[2]/div[3]/div[3]/div/p")
-        if not click_element(driver, gain_detergent, wait_time=5):
+        # Choose detergent in the dialog that appears after Wash and Fold
+        print("Looking for Gain Detergent option (in dialog)...")
+        gain_detergent_selectors = [
+            (By.XPATH, "//div[contains(@role,'dialog')]//*[contains(text(),'Gain')]"),
+            (By.XPATH, "//*[contains(@class,'Modal') or contains(@class,'modal') or contains(@class,'dialog')]//*[contains(text(),'Gain')]"),
+            (By.XPATH, "//p[contains(text(),'Gain')]"),
+            (By.XPATH, "//*[contains(text(),'Gain Detergent')]"),
+            (By.XPATH, "//*[contains(text(),'Gain')]/ancestor::*[self::button or self::div[@role='button'] or self::p][1]"),
+            (By.XPATH, "/html/body/div[8]/div[3]/div/div[2]/div[3]/div[3]/div/p"),
+            (By.XPATH, "/html/body/div[7]/div[3]/div/div[2]/div[3]/div[3]/div/p"),
+            (By.XPATH, "/html/body/div[9]/div[3]/div/div[2]/div[3]/div[3]/div/p"),
+        ]
+        detergent_clicked = False
+        for sel in gain_detergent_selectors:
+            if click_element(driver, sel, wait_time=5):
+                detergent_clicked = True
+                break
+        if not detergent_clicked:
             raise Exception("Failed to click Gain Detergent")
         print("Clicked Gain Detergent option")
         time.sleep(3)  # Wait before Save
 
-        # Click Save button
-        print("Looking for Save button...")
-        save_button = (By.XPATH, "//button[text()='Save']")
-        if not click_element(driver, save_button):
-            raise Exception("Failed to click Save")
-        print("Clicked Save button")
+        # Click Add to Order button (in detergent dialog)
+        print("Looking for Add to Order button...")
+        add_to_order_selectors = [
+            (By.XPATH, "//button[contains(., 'Add to Order')]"),
+            (By.XPATH, "//button[contains(., 'Add To Order')]"),
+            (By.XPATH, "//*[contains(text(), 'Add to Order')]/ancestor::button"),
+            (By.XPATH, "//button[text()='Add to Order']"),
+        ]
+        add_clicked = False
+        for sel in add_to_order_selectors:
+            if click_element(driver, sel, wait_time=5):
+                add_clicked = True
+                break
+        if not add_clicked:
+            raise Exception("Failed to click Add to Order")
+        print("Clicked Add to Order button")
         time.sleep(3)  # Wait for next section
 
         # Click Next button

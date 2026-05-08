@@ -1,10 +1,13 @@
+import os
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-SERVICE_ACCOUNT_FILE = 'property_files/calendar-automate-srvc-account-ref-file.json'
+# Use root repo property_files (one folder for all subprojects)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVICE_ACCOUNT_FILE = os.path.join(_REPO_ROOT, 'property_files', 'calendar-automate-srvc-account-ref-file.json')
 
 def get_calendar_service():
     """Gets Google Calendar service using service account credentials"""

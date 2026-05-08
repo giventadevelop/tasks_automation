@@ -9,10 +9,11 @@ a = Analysis(
     ],
     binaries=[],
     datas=[
-        ('property_files/calendar_api_properties.properties', 'property_files'),
-        ('property_files/calendar-automate-srvc-account-ref-file.json', 'property_files'),
-        ('property_files/google_desktop_oauth_client_contacts_api.json', 'property_files'),
-        ('property_files/token.pickle', 'property_files'),
+        # Use root repo property_files (one folder for all subprojects)
+        ('../property_files/calendar_api_properties.properties', 'property_files'),
+        ('../property_files/calendar-automate-srvc-account-ref-file.json', 'property_files'),
+        ('../property_files/google_desktop_oauth_client_contacts_api.json', 'property_files'),
+        ('../property_files/token.pickle', 'property_files'),
         ('../Laundry_TryCents/laundry_automation.py', '.')
     ],
     hiddenimports=[
