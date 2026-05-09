@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Laundry TryCents weekly Hermes cron schedule, runtime flow, caveats, and Hermes CLI commands.">
+    <title>Laundry TryCents — Weekly Hermes Cron Schedule</title>
+    <style>
+        body {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 0.3em;
+            margin-top: 0;
+        }
+
+        h2 {
+            font-size: 1.8em;
+            border-left: 4px solid #0066cc;
+            padding-left: 15px;
+            margin-top: 1.5em;
+        }
+
+        h3 {
+            font-size: 1.4em;
+            color: #333;
+        }
+
+        h4 {
+            font-size: 1.2em;
+            color: #555;
+        }
+
+        .toc {
+            background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+
+        .toc h2 {
+            margin-top: 0;
+            border: none;
+            padding-left: 0;
+        }
+
+        .toc ul {
+            margin: 0;
+            padding-left: 1.25em;
+        }
+
+        .toc a {
+            color: #0066cc;
+        }
+
+        .section-intro {
+            background: linear-gradient(135deg, #e8f4f8 0%, #d1e7f0 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+
+        .section-intro code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+        }
+
+        .section-container {
+            background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+
+        .section-container.usage {
+            background: linear-gradient(135deg, #f0e6ff 0%, #e6ccff 100%);
+            border-left-color: #9c27b0;
+        }
+
+        .section-header {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+            padding: 12px 20px;
+            margin: -20px -20px 20px -20px;
+            border-radius: 8px 8px 0 0;
+            font-size: 1.2em;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-header.usage {
+            background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
+        }
+
+        .info {
+            background-color: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            padding: 15px 18px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .info code,
+        .info .code-highlight,
+        .warning code,
+        .warning .code-highlight,
+        .success code,
+        .success .code-highlight {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+            font-family: 'Courier New', monospace;
+        }
+
+        .warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 18px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px 18px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .script-name {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+
+        .parameters-list {
+            background: linear-gradient(135deg, #fff5e6 0%, #ffe6cc 100%);
+            border-left: 4px solid #ff9800;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 15px 0;
+        }
+
+        .parameters-list strong {
+            color: #ff9800;
+            font-weight: bold;
+        }
+
+        .parameters-list code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 0.5px;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        tr:hover {
+            background-color: #e3f2fd;
+            transition: background-color 0.2s ease;
+        }
+
+        td code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+            font-family: 'Courier New', monospace;
+        }
+
+        .code-block,
+        pre,
+        pre code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #b8d4e3;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+
+        code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .command-block {
+            border: 2px solid;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .command-block.verify {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border-color: #4caf50;
+        }
+
+        .command-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.5);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .command-type {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .command-header-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .copy-button,
+        .copy-button-template {
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .copy-button {
+            background-color: #0066cc;
+            color: white;
+        }
+
+        .copy-button:hover {
+            background-color: #0052a3;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .copy-button.copied {
+            background-color: #28a745;
+        }
+
+        .copy-button-template {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .copy-button-template:hover {
+            background-color: #5a6268;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .copy-button-template.copied {
+            background-color: #28a745;
+        }
+
+        .command-parameters {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.5);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .command-parameters h5 {
+            margin: 0 0 12px 0;
+            font-size: 0.9em;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .parameter-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .parameter-group.single {
+            grid-template-columns: 1fr;
+        }
+
+        .parameter-input {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .parameter-input label {
+            font-size: 0.8em;
+            color: #555;
+            font-weight: 600;
+        }
+
+        .parameter-input input {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            transition: border-color 0.2s ease;
+        }
+
+        .parameter-input input:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+
+        .command-content {
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            background: #fff;
+            color: #0d3b66;
+            word-break: break-all;
+        }
+
+        .command-single-line {
+            padding: 12px 15px;
+            background: #e8f4f8;
+            border-top: 1px solid #b8d4e3;
+        }
+
+        .command-single-line-label {
+            font-size: 0.75em;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .command-single-line code {
+            background: transparent;
+            border: none;
+            padding: 0;
+            color: #0d3b66;
+            font-size: 0.95em;
+        }
+
+        main ol li {
+            margin-bottom: 0.5em;
+        }
+
+        .parameter-note {
+            margin: 0;
+            font-size: 0.9em;
+            color: #555;
+        }
+
+        .tight-top {
+            margin-top: 0;
+        }
+
+        .tight-bottom {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 1.75em;
+            }
+
+            .parameter-group {
+                grid-template-columns: 1fr;
+            }
+
+            .command-block {
+                font-size: 0.85em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Laundry TryCents — Weekly Hermes Cron Schedule</h1>
+
+        <div class="toc">
+            <h2>Table of Contents</h2>
+            <ul>
+                <li><a href="#scheduled-job">Scheduled job summary</a></li>
+                <li><a href="#five-pm-flow">What happens at 5:00 PM Monday</a></li>
+                <li><a href="#caveats">Important caveats</a></li>
+                <li><a href="#hermes-commands">Useful Hermes commands</a></li>
+                <li><a href="#assistant">Natural-language control</a></li>
+                <li><a href="#test-run">Manual test run</a></li>
+            </ul>
+        </div>
+
+        <div class="section-intro">
+            <p>
+                This page documents the recurring weekly Hermes cron job that runs the Laundry TryCents automation
+                (no LLM — the job only executes the shell script path). The job is scheduled for
+                <strong>Monday at 17:00 Eastern Time</strong>, starting <strong>Monday, May 11, 2026</strong>, and repeats weekly.
+            </p>
+        </div>
+
+        <h2 id="scheduled-job">Scheduled job summary</h2>
+        <div class="section-container">
+            <div class="section-header">📅 Job details</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Field</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Status</td>
+                        <td>Scheduled</td>
+                    </tr>
+                    <tr>
+                        <td>Job ID</td>
+                        <td><code>08adc372e6ae</code></td>
+                    </tr>
+                    <tr>
+                        <td>Next run</td>
+                        <td>Monday, May 11, 2026 at 17:00 EDT</td>
+                    </tr>
+                    <tr>
+                        <td>Recurrence</td>
+                        <td>Weekly</td>
+                    </tr>
+                    <tr>
+                        <td>LLM</td>
+                        <td>None — cron runs the script only</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="five-pm-flow">What happens at 5:00 PM Monday</h2>
+        <div class="section-container">
+            <div class="section-header">⚙️ End-to-end flow</div>
+            <ol>
+                <li>
+                    Cron fires on the Hermes side → <code class="code-highlight">~/.hermes/scripts/laundry_trycents_weekly.sh</code> runs.
+                </li>
+                <li>
+                    That wrapper delegates to <code class="script-name">laundry_flow.sh</code> in your Laundry TryCents project directory.
+                </li>
+                <li>
+                    The flow checks whether Chrome on Windows is reachable at <code class="code-highlight">localhost:9222</code> (Chrome DevTools Protocol).
+                    <ul>
+                        <li>If <strong>yes</strong> → the script uses the existing browser.</li>
+                        <li>If <strong>no</strong> → it launches <code class="script-name">start_chrome_cdp.bat</code> via <code class="code-highlight">cmd.exe</code>, then waits up to <strong>30 seconds</strong> for CDP to become available.</li>
+                    </ul>
+                </li>
+                <li>
+                    The Python CDP driver runs the order flow end-to-end and <strong>stops on the Order Summary page</strong> (checkout review), so you can verify line items before submitting.
+                </li>
+                <li>
+                    You <strong>manually click Submit</strong> in your Chrome window when you are satisfied with the order.
+                </li>
+            </ol>
+            <div class="info">
+                <strong>Implementation note:</strong>
+                <code class="script-name">laundry_flow.sh</code> probes <code class="code-highlight">$CDP_URL/json/version</code> (default <code class="code-highlight">http://localhost:9222</code>),
+                starts Windows Chrome if needed, then runs <code class="script-name">_cdp_driver.py</code>. See the project <code class="script-name">README.md</code> for file roles and environment variables.
+            </div>
+        </div>
+
+        <h2 id="caveats">Important caveats</h2>
+        <div class="warning">
+            <strong>Machine must be awake and unlocked</strong>
+            <p>
+                At 5:00 PM Mondays your Windows machine must be <strong>awake and unlocked</strong>. If it is asleep or hibernating, the job fails because Chrome cannot render the UI reliably.
+            </p>
+            <p><strong>Mitigations:</strong></p>
+            <ul>
+                <li>Windows Settings → Power → set <strong>Sleep: Never</strong> while plugged in, or</li>
+                <li>Task Scheduler: a <strong>“wake the computer”</strong> task at 4:55 PM Mondays (or similar).</li>
+            </ul>
+        </div>
+        <div class="warning">
+            <strong>WSL must be running</strong>
+            <p>
+                A normal Hermes daemon keeps WSL alive. If WSL is fully shut down, cron does not run. Check with
+                <code class="code-highlight">wsl --status</code> from Windows when troubleshooting.
+            </p>
+        </div>
+        <div class="warning">
+            <strong>Chrome profile conflicts</strong>
+            <p>
+                Chrome already running with a <strong>different</strong> <code class="code-highlight">--user-data-dir</code> can conflict with the CDP instance.
+                The cleanest approach is to keep the CDP Chrome profile (for example <code class="code-highlight">C:\chrome-cdp</code>) in a <strong>separate window</strong> from your daily browsing profile.
+            </p>
+        </div>
+
+        <h2 id="hermes-commands">Useful Hermes commands</h2>
+        <div class="section-container usage">
+            <div class="section-header usage">📋 Hermes CLI (WSL)</div>
+            <p>All commands below are single-line for Windows/WSL terminals. Use the job ID field to point at this job or another cron job.</p>
+
+            <div class="parameters-list">
+                <p><strong>Parameters (where applicable):</strong></p>
+                <ul>
+                    <li><code>job-id</code> — Hermes cron job identifier (default for this automation: <code>08adc372e6ae</code>).</li>
+                </ul>
+            </div>
+
+            <div class="command-block verify"
+                 data-command-type="verify"
+                 data-command-base="hermes cron list"
+                 data-template-command="hermes cron list">
+                <div class="command-header">
+                    <span class="command-type">Hermes — list all cron jobs</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'hc-list')" title="Copy template command" aria-label="Copy template command">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'hc-list')" title="Copy command" aria-label="Copy command to clipboard">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-parameters">
+                    <h5>Customize parameters</h5>
+                    <p class="parameter-note">This command has no parameters. Template and Copy both copy the same line.</p>
+                </div>
+                <div class="command-content" id="hc-list">hermes cron list</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="hc-list-single-code">hermes cron list</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-command-type="verify"
+                 data-command-base="hermes cron run"
+                 data-template-command="hermes cron run 08adc372e6ae">
+                <div class="command-header">
+                    <span class="command-type">Hermes — run job now (manual test)</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'hc-run')" title="Copy template command" aria-label="Copy template command">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'hc-run')" title="Copy customized command" aria-label="Copy customized command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-parameters">
+                    <h5>Customize parameters</h5>
+                    <div class="parameter-group single">
+                        <div class="parameter-input">
+                            <label for="hc-run-job-id">Job ID</label>
+                            <input type="text" id="hc-run-job-id" placeholder="08adc372e6ae" value="08adc372e6ae" oninput="updateCommandHermes('hc-run', 'job-id', this.value)" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="command-content" id="hc-run">hermes cron run 08adc372e6ae</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="hc-run-single-code">hermes cron run 08adc372e6ae</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-command-type="verify"
+                 data-command-base="hermes cron remove"
+                 data-template-command="hermes cron remove 08adc372e6ae">
+                <div class="command-header">
+                    <span class="command-type">Hermes — remove (cancel) job</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'hc-remove')" title="Copy template command" aria-label="Copy template command">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'hc-remove')" title="Copy customized command" aria-label="Copy customized command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-parameters">
+                    <h5>Customize parameters</h5>
+                    <div class="parameter-group single">
+                        <div class="parameter-input">
+                            <label for="hc-remove-job-id">Job ID</label>
+                            <input type="text" id="hc-remove-job-id" placeholder="08adc372e6ae" value="08adc372e6ae" oninput="updateCommandHermes('hc-remove', 'job-id', this.value)" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="command-content" id="hc-remove">hermes cron remove 08adc372e6ae</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="hc-remove-single-code">hermes cron remove 08adc372e6ae</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-command-type="verify"
+                 data-command-base="hermes cron pause"
+                 data-template-command="hermes cron pause 08adc372e6ae">
+                <div class="command-header">
+                    <span class="command-type">Hermes — pause job</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'hc-pause')" title="Copy template command" aria-label="Copy template command">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'hc-pause')" title="Copy customized command" aria-label="Copy customized command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-parameters">
+                    <h5>Customize parameters</h5>
+                    <div class="parameter-group single">
+                        <div class="parameter-input">
+                            <label for="hc-pause-job-id">Job ID</label>
+                            <input type="text" id="hc-pause-job-id" placeholder="08adc372e6ae" value="08adc372e6ae" oninput="updateCommandHermes('hc-pause', 'job-id', this.value)" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="command-content" id="hc-pause">hermes cron pause 08adc372e6ae</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="hc-pause-single-code">hermes cron pause 08adc372e6ae</code>
+                </div>
+            </div>
+        </div>
+
+        <h2 id="assistant">Natural-language control</h2>
+        <div class="section-container usage">
+            <div class="section-header usage">💬 Via your assistant</div>
+            <div class="info">
+                <p class="tight-top">Instead of typing Hermes commands, you can say things like:</p>
+                <ul>
+                    <li><strong>“Run the laundry job now”</strong> — triggers a manual run through the same path.</li>
+                    <li><strong>“Pause the laundry job”</strong> — temporarily disables the schedule.</li>
+                    <li><strong>“Cancel it”</strong> — removes the cron job (destructive; confirm intent).</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2 id="test-run">Manual test run</h2>
+        <div class="section-container">
+            <div class="section-header">🧪 Confirm the wrapper path</div>
+            <div class="success">
+                <p class="tight-top">
+                    To confirm the full chain (Hermes wrapper → <code class="script-name">laundry_flow.sh</code> → CDP → driver) works end-to-end,
+                    run <code class="code-highlight">hermes cron run 08adc372e6ae</code> from WSL or ask your assistant to run the laundry job now.
+                </p>
+                <p class="tight-bottom">Watch Chrome for the Order Summary step and submit only when the order looks correct.</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const commandParams = {};
+
+        const DEFAULT_JOB = '08adc372e6ae';
+
+        function buildHermesCommand(commandId) {
+            if (commandId === 'hc-list') {
+                return 'hermes cron list';
+            }
+            const p = commandParams[commandId] || {};
+            const jid = (p['job-id'] || '').trim() || DEFAULT_JOB;
+            if (commandId === 'hc-run') return 'hermes cron run ' + jid;
+            if (commandId === 'hc-remove') return 'hermes cron remove ' + jid;
+            if (commandId === 'hc-pause') return 'hermes cron pause ' + jid;
+            return '';
+        }
+
+        function updateCommandHermes(commandId, paramName, paramValue) {
+            if (!commandParams[commandId]) commandParams[commandId] = {};
+            if (paramName !== undefined) {
+                commandParams[commandId][paramName] = paramValue;
+            }
+            const text = buildHermesCommand(commandId);
+            const commandElement = document.getElementById(commandId);
+            if (commandElement) commandElement.textContent = text;
+            const single = document.getElementById(commandId + '-single-code');
+            if (single) single.textContent = text;
+        }
+
+        function initializeCommands() {
+            document.querySelectorAll('.command-block[data-command-base]').forEach(function (block) {
+                const commandContent = block.querySelector('.command-content');
+                if (!commandContent || !commandContent.id) return;
+                const commandId = commandContent.id;
+                block.querySelectorAll('.parameter-input input').forEach(function (input) {
+                    const inputId = input.id;
+                    if (!inputId || !inputId.startsWith(commandId + '-')) return;
+                    const paramName = inputId.substring(commandId.length + 1);
+                    if (!commandParams[commandId]) commandParams[commandId] = {};
+                    commandParams[commandId][paramName] = input.value || '';
+                });
+                updateCommandHermes(commandId);
+            });
+        }
+
+        function fallbackCopy(text, button, templateMode) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('aria-hidden', 'true');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+                button.classList.add('copied');
+                button.textContent = '✓ Copied!';
+                setTimeout(function () {
+                    button.classList.remove('copied');
+                    button.textContent = templateMode ? '📄 Template' : '📋 Copy';
+                }, 2000);
+            } catch (err) {
+                console.error('Copy failed', err);
+            }
+            document.body.removeChild(ta);
+        }
+
+        function copyCommand(button, commandId) {
+            const commandElement = document.getElementById(commandId);
+            if (!commandElement) return;
+            const commandText = commandElement.textContent.trim();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(commandText).then(function () {
+                    button.classList.add('copied');
+                    button.textContent = '✓ Copied!';
+                    setTimeout(function () {
+                        button.classList.remove('copied');
+                        button.textContent = '📋 Copy';
+                    }, 2000);
+                }).catch(function () {
+                    fallbackCopy(commandText, button, false);
+                });
+            } else {
+                fallbackCopy(commandText, button, false);
+            }
+        }
+
+        function copyTemplateCommand(button, commandId) {
+            const commandBlock = button.closest('.command-block');
+            if (!commandBlock) return;
+            let templateCommand = commandBlock.getAttribute('data-template-command');
+            if (!templateCommand) {
+                const commandElement = document.getElementById(commandId);
+                if (!commandElement) return;
+                templateCommand = commandElement.textContent.trim();
+            }
+            templateCommand = templateCommand.replace(/&quot;/g, '"');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(templateCommand).then(function () {
+                    button.classList.add('copied');
+                    button.textContent = '✓ Copied!';
+                    setTimeout(function () {
+                        button.classList.remove('copied');
+                        button.textContent = '📄 Template';
+                    }, 2000);
+                }).catch(function () {
+                    fallbackCopy(templateCommand, button, true);
+                });
+            } else {
+                fallbackCopy(templateCommand, button, true);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeCommands();
+        });
+    </script>
+</body>
+</html>
