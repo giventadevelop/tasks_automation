@@ -28,11 +28,16 @@ import websocket  # provided by the browser-use venv on this machine
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
 DEFAULT_TITLE = (
-    "Friday 6:00 PM at Lake Hiawatha Park — https://g.co/kgs/FrFYPm8\n"
-    "Hosted by Parsippany Rescue & Recovery Unit.\n"
+    "Shall we play Volleyball this Friday 6:00 PM at Lake Hiawatha Park — https://g.co/kgs/FrFYPm8\n"
+    "📍 4 Volunteers Court, Lake Hiawatha, NJ 07034\n"
+    "Next to Parsippany Rescue & Recovery Unit.\n"
     "Please confirm by noon Friday."
 )
+DEFAULT_CANCEL_MSG = (
+    "🌧️ Rainy day — meeting cancelled this Friday. We'll regroup next week."
+)
 POLL_TITLE = os.environ.get("POLL_TITLE", DEFAULT_TITLE)
+CANCEL_MSG = os.environ.get("CANCEL_MSG", DEFAULT_CANCEL_MSG)
 POLL_OPTIONS = ["Yes", "No"]
 SEND = os.environ.get("SEND", "") == "1"
 TRACE = os.environ.get("TRACE", "") == "1"
@@ -41,6 +46,21 @@ TRACE = os.environ.get("TRACE", "") == "1"
 # Default contact (used when env var is unset OR empty).
 DEFAULT_CONTACT = "Gain Joseph"
 CONTACT = os.environ.get("CONTACT", "").strip() or DEFAULT_CONTACT
+
+
+# ---- Weather pre-check ----------------------------------------------------
+# Location: Lake Hiawatha Park, NJ (≈4 Volunteers Court, Lake Hiawatha 07034)
+# Coords are hardcoded (zip 07034 → ~40.881, -74.387). Adjust if needed.
+WEATHER_LAT = float(os.environ.get("WEATHER_LAT", "40.881"))
+WEATHER_LON = float(os.environ.get("WEATHER_LON", "-74.387"))
+# Window we care about (tomorrow, local time): 4 PM – 8:30 PM
+WEATHER_WINDOW_START_HOUR = int(os.environ.get("WEATHER_START_HOUR", "16"))
+WEATHER_WINDOW_END_HOUR = int(os.environ.get("WEATHER_END_HOUR", "20"))  # rounded up: covers hour 19→20 (8 PM)
+# Rain decision thresholds
+RAIN_KEYWORDS = ("rain", "shower", "thunderstorm", "storm", "drizzle")
+RAIN_POP_THRESHOLD = int(os.environ.get("RAIN_POP_THRESHOLD", "50"))  # %
+# Skip the weather pre-check entirely (e.g. for indoor events / debugging)
+SKIP_WEATHER = os.environ.get("SKIP_WEATHER", "") == "1"
 
 
 def log(msg: str) -> None:
@@ -56,6 +76,75 @@ def _http(method: str, path: str, timeout: float = 10) -> bytes:
     return urllib.request.urlopen(
         urllib.request.Request(f"{CDP_URL}{path}", method=method), timeout=timeout
     ).read()
+
+
+# ---- Weather check helpers ------------------------------------------------
+
+def _nws_get(url: str, timeout: float = 15) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "WhatsApp_Web_Poll/1.0 (personal volleyball poll)",
+            "Accept": "application/geo+json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def weather_check_tomorrow() -> tuple[bool, str]:
+    """Return (is_rainy, human_message).
+
+    is_rainy=True means: in tomorrow's window 16:00–20:00 local, at least one
+    hour has either (a) probability-of-precipitation >= RAIN_POP_THRESHOLD or
+    (b) a shortForecast mentioning rain/showers/storms.
+    """
+    import datetime as _dt
+
+    log(f"weather: fetching forecast for ({WEATHER_LAT},{WEATHER_LON})")
+    points = _nws_get(f"https://api.weather.gov/points/{WEATHER_LAT},{WEATHER_LON}")
+    forecast_url = points["properties"]["forecastHourly"]
+    forecast = _nws_get(forecast_url)
+    periods = forecast["properties"]["periods"]
+
+    # NWS startTime is ISO-8601 with timezone offset → use it directly.
+    tomorrow = (_dt.datetime.now().astimezone() + _dt.timedelta(days=1)).date()
+
+    relevant = []
+    for p in periods:
+        st = _dt.datetime.fromisoformat(p["startTime"])
+        if st.date() != tomorrow:
+            continue
+        if not (WEATHER_WINDOW_START_HOUR <= st.hour < WEATHER_WINDOW_END_HOUR):
+            continue
+        pop = (p.get("probabilityOfPrecipitation") or {}).get("value") or 0
+        fc = p.get("shortForecast", "")
+        rainy = pop >= RAIN_POP_THRESHOLD or any(k in fc.lower() for k in RAIN_KEYWORDS)
+        relevant.append({
+            "hour": st.strftime("%I:%M %p").lstrip("0"),
+            "pop": pop,
+            "forecast": fc,
+            "rainy": rainy,
+        })
+
+    if not relevant:
+        # NWS sometimes only has ~7 days; if we ran very late at night, tomorrow
+        # may have rolled over. Treat as non-rainy but warn.
+        return False, "weather: no forecast data for tomorrow's window — proceeding"
+
+    rainy_hours = [r for r in relevant if r["rainy"]]
+    lines = [f"  {r['hour']}: {r['pop']}% — {r['forecast']}" for r in relevant]
+    summary = (
+        f"weather check for tomorrow {tomorrow.isoformat()} "
+        f"{WEATHER_WINDOW_START_HOUR:02d}:00–{WEATHER_WINDOW_END_HOUR:02d}:00 local:\n"
+        + "\n".join(lines)
+    )
+    if rainy_hours:
+        return True, summary + (
+            f"\n→ RAIN expected ({len(rainy_hours)} of {len(relevant)} hours flagged). "
+            "Meeting will be cancelled."
+        )
+    return False, summary + "\n→ no rain expected — clear to send poll."
 
 
 def list_tabs() -> list:
@@ -183,64 +272,41 @@ class Tab:
     def insert_text(self, text: str) -> None:
         """Insert text into the currently focused element.
 
-        Three strategies, in order:
-        1. Input.insertText (works for contenteditable + most inputs)
-        2. Direct value setter + input event (works for stubborn React inputs)
-        3. Character-by-character Input.dispatchKeyEvent (last resort)
+        Strategy: try CDP Input.insertText first (works for both contenteditable
+        and most <input> elements via the input event). Only fall back to
+        direct value-setter or char-by-char typing if insertText raises.
+
+        Earlier versions had a post-insert verification that compared
+        innerText/value to the typed text; that gave false negatives for
+        contenteditable (text inserted as nested spans, innerText timing) and
+        caused fallbacks to run on top of the first insert — doubling chars.
         """
-        # Strategy 1 — insertText
+        # Strategy 1 — Input.insertText (the right tool for the job)
         try:
             self._call("Input.insertText", {"text": text}, timeout=10)
+            return
         except Exception as exc:
-            log(f"insertText failed: {exc}")
+            log(f"insertText failed ({exc}); trying fallbacks")
 
-        # Verify it took
+        # Strategy 2 — direct value setter (only useful for native <input>/<textarea>)
         try:
             ok = self.eval(
                 "const el=document.activeElement;"
-                "if(!el)return false;"
-                "const v=el.value!==undefined?el.value:el.innerText||el.textContent||'';"
-                f"return v.includes({json.dumps(text)});"
+                "if(!el || !('value' in el)) return false;"
+                "const proto=Object.getPrototypeOf(el);"
+                "const desc=Object.getOwnPropertyDescriptor(proto,'value');"
+                "if(!desc||!desc.set) return false;"
+                f"desc.set.call(el, {json.dumps(text)});"
+                "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                "el.dispatchEvent(new Event('change',{bubbles:true}));"
+                "return true;"
             )
-        except Exception:
-            ok = False
-        if ok:
-            return
-
-        # Strategy 2 — direct value setter for inputs (React-safe)
-        try:
-            self.eval(
-                "const el=document.activeElement;"
-                "if(!el)return false;"
-                "if('value' in el){"
-                "  const proto=Object.getPrototypeOf(el);"
-                "  const desc=Object.getOwnPropertyDescriptor(proto,'value');"
-                "  if(desc&&desc.set){"
-                f"   desc.set.call(el, {json.dumps(text)});"
-                "    el.dispatchEvent(new Event('input',{bubbles:true}));"
-                "    el.dispatchEvent(new Event('change',{bubbles:true}));"
-                "    return true;"
-                "  }"
-                "}"
-                "return false;"
-            )
+            if ok:
+                return
         except Exception as exc:
             log(f"value-set fallback failed: {exc}")
 
-        # Verify again
-        try:
-            ok = self.eval(
-                "const el=document.activeElement;"
-                "if(!el)return false;"
-                "const v=el.value!==undefined?el.value:el.innerText||el.textContent||'';"
-                f"return v.includes({json.dumps(text)});"
-            )
-        except Exception:
-            ok = False
-        if ok:
-            return
-
-        # Strategy 3 — type each char as a key event
+        # Strategy 3 — last resort: type each char
         log(f"falling back to char-by-char typing for {text!r}")
         for ch in text:
             if ch == "\n":
@@ -367,14 +433,180 @@ S_POLL_OPTION_INPUTS = (
 )
 S_POLL_SEND_BUTTON = (
     "(()=>{const d=" + S_POLL_DIALOG + ";if(!d)return null;"
-    "return [...d.querySelectorAll('button, [role=\"button\"]')]"
+    # Send is a DIV with aria-label="Send" — not a real button/role=button.
+    "const cands=[...d.querySelectorAll('[aria-label=\"Send\"]')]"
+    ".filter(e=>e.offsetParent!==null);"
+    "if(cands.length) return cands[0];"
+    # Fallback: any button-ish whose label/text matches send
+    "return [...d.querySelectorAll('button, [role=\"button\"], div[aria-label]')]"
     ".find(b=>b.offsetParent!==null && /send/i.test((b.getAttribute('aria-label')||b.innerText||'')));"
     "})()"
 )
 
 
+S_MESSAGE_COMPOSER = (
+    "(()=>{"
+    # The composer is a contenteditable with aria-label starting "Type a message"
+    "const cs=[...document.querySelectorAll('#main div[contenteditable=\"true\"][role=\"textbox\"]')]"
+    ".filter(e=>e.offsetParent!==null);"
+    "const typed=cs.find(e=>{const a=(e.getAttribute('aria-label')||'').toLowerCase();return a.startsWith('type a message');});"
+    "return typed || cs[0];})()"
+)
+S_MESSAGE_SEND_BUTTON = (
+    "document.querySelector('#main button[aria-label=\"Send\"], #main [aria-label=\"Send\"]')"
+)
+
+
+def open_contact_chat(tab):
+    """Run the search → click → header-verify flow. Returns when chat is open."""
+    # Close any open in-chat search panel from prior runs.
+    try:
+        tab.eval(
+            "const closeBtns=[...document.querySelectorAll('button[aria-label=\"Close\"]')]"
+            ".filter(b=>{const r=b.getBoundingClientRect();return r.x>1000&&b.offsetParent!==null;});"
+            "if(closeBtns.length){closeBtns[0].click();return true;}return false;"
+        )
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+    tab.click(S_SEARCH_BUTTON, "Search button (chat list)")
+    time.sleep(0.6)
+    tab.wait(f"!!({S_SEARCH_BOX})", "search input field", timeout=10)
+    tab.focus(S_SEARCH_BOX, "search box")
+    tab.eval(
+        "const el=document.activeElement;"
+        "if(el && 'value' in el){"
+        "  const proto=Object.getPrototypeOf(el);"
+        "  const desc=Object.getOwnPropertyDescriptor(proto,'value');"
+        "  if(desc&&desc.set){desc.set.call(el,'');"
+        "    el.dispatchEvent(new Event('input',{bubbles:true}));}"
+        "} else if(el){el.innerText='';el.dispatchEvent(new Event('input',{bubbles:true}));}"
+        "return true;"
+    )
+    time.sleep(0.2)
+    tab.insert_text(CONTACT)
+    time.sleep(2.0)
+    actual = tab.eval(
+        "const el=document.activeElement;"
+        "return el ? (el.value!==undefined?el.value:el.innerText||el.textContent||'') : '';"
+    )
+    log(f"search box value after typing: {actual!r}")
+    tab.wait(f"!!({S_CONTACT_RESULT})", f"search result for {CONTACT!r}", timeout=15)
+    tab.click(S_CONTACT_RESULT, f"open chat: {CONTACT}")
+    time.sleep(0.6)
+    tab.wait(f"!!({S_CHAT_OPEN_HEADER})", f"chat header for {CONTACT!r}", timeout=25)
+
+
+def send_text_message(tab, text: str) -> None:
+    """Type `text` into the open chat's composer and click Send."""
+    tab.wait(f"!!({S_MESSAGE_COMPOSER})", "message composer", timeout=15)
+    tab.focus(S_MESSAGE_COMPOSER, "message composer")
+    # Clear any draft using execCommand (the contenteditable-correct way)
+    tab.eval(
+        "const el=document.activeElement;"
+        "if(el){document.execCommand('selectAll', false, null);"
+        "document.execCommand('delete', false, null);"
+        "el.dispatchEvent(new Event('input',{bubbles:true}));}"
+        "return true;"
+    )
+    time.sleep(0.2)
+    tab.insert_text(text)
+    time.sleep(0.6)
+    if not SEND:
+        log(f"DRY-RUN: composer filled with {text!r} — not clicking Send.")
+        return
+    tab.wait(f"!!({S_MESSAGE_SEND_BUTTON})", "message Send button", timeout=10)
+    tab.click(S_MESSAGE_SEND_BUTTON, "Send message")
+    # Confirm sent: composer should be cleared
+    tab.wait(
+        "(()=>{const el=" + S_MESSAGE_COMPOSER + ";return el && (el.innerText||'').trim()==='';})()",
+        "composer cleared (message sent)",
+        timeout=10,
+    )
+    log("✓ message sent")
+
+
+def send_poll(tab) -> None:
+    """Open Attach → Poll, fill question + Yes/No, and (optionally) Send."""
+    # Defensive: clear any draft text the chat composer may still hold
+    # (e.g. from a previous dry-run that left text behind).
+    try:
+        tab.eval(
+            "const el=" + S_MESSAGE_COMPOSER + ";"
+            "if(el){el.focus();document.execCommand('selectAll', false, null);"
+            "document.execCommand('delete', false, null);"
+            "el.dispatchEvent(new Event('input',{bubbles:true}));}"
+            "return true;"
+        )
+    except Exception:
+        pass
+
+    tab.click(S_ATTACH_BUTTON, "attach (paperclip)")
+    time.sleep(0.6)
+    tab.wait(f"!!({S_POLL_MENU_ITEM})", "Poll menu item", timeout=10)
+    tab.click(S_POLL_MENU_ITEM, "Poll")
+
+    tab.wait(f"!!({S_POLL_DIALOG})", "poll dialog", timeout=10)
+
+    # Clear question field, then type
+    tab.focus(S_POLL_QUESTION, "poll question field")
+    tab.eval(
+        "const el=document.activeElement;"
+        "if(el){document.execCommand('selectAll', false, null);"
+        "document.execCommand('delete', false, null);"
+        "el.dispatchEvent(new Event('input',{bubbles:true}));}"
+        "return true;"
+    )
+    time.sleep(0.2)
+    tab.insert_text(POLL_TITLE)
+
+    opt_count = tab.eval(f"return ({S_POLL_OPTION_INPUTS}).length;") or 0
+    log(f"poll dialog shows {opt_count} option fields")
+    if opt_count < len(POLL_OPTIONS):
+        log(f"WARN: dialog has only {opt_count} option slots; expected {len(POLL_OPTIONS)}.")
+
+    for i, opt_text in enumerate(POLL_OPTIONS):
+        sel = f"({S_POLL_OPTION_INPUTS})[{i}]"
+        tab.focus(sel, f"option {i+1} field")
+        tab.insert_text(opt_text)
+        time.sleep(0.3)
+
+    time.sleep(0.6)
+    if not SEND:
+        log("DRY-RUN: not clicking Send. Re-run with SEND=1 to actually send the poll.")
+        return
+
+    tab.wait(f"!!({S_POLL_SEND_BUTTON})", "poll Send button", timeout=10)
+    tab.click(S_POLL_SEND_BUTTON, "Send poll")
+    tab.wait("!document.querySelector('div[role=\"dialog\"]')",
+             "poll dialog closed (poll sent)", timeout=15)
+    log("✓ poll sent")
+
+
 def main() -> int:
     log(f"contact={CONTACT!r}  send={SEND}  trace={TRACE}")
+
+    # Weather pre-check
+    cancelled = False
+    if SKIP_WEATHER:
+        log("weather: SKIP_WEATHER=1 → skipping weather check")
+    else:
+        try:
+            rainy, msg = weather_check_tomorrow()
+        except Exception as exc:
+            log(f"weather: check failed ({exc}) — proceeding without it")
+            rainy = False
+            msg = ""
+        if msg:
+            for line in msg.splitlines():
+                log(line)
+        cancelled = rainy
+
+    if cancelled:
+        log("=" * 60)
+        log("RAINY DAY — will send cancellation message instead of poll.")
+        log("=" * 60)
 
     # CDP sanity
     try:
@@ -387,109 +619,22 @@ def main() -> int:
     try:
         url = tab.eval("return location.href;")
         log(f"on: {url}")
-
-        # WhatsApp Web takes a while on first load
         tab.wait(
             "!!document.querySelector('#pane-side, #side, [data-testid=\"chat-list\"]')",
             "WhatsApp Web sidebar (logged in?)",
             timeout=60,
         )
 
-        # First, close any open in-chat search panel (right side) from prior runs.
-        try:
-            tab.eval(
-                "const closeBtns=[...document.querySelectorAll('button[aria-label=\"Close\"]')]"
-                ".filter(b=>{const r=b.getBoundingClientRect();return r.x>1000&&b.offsetParent!==null;});"
-                "if(closeBtns.length){closeBtns[0].click();return true;}return false;"
-            )
-            time.sleep(0.3)
-        except Exception:
-            pass
+        open_contact_chat(tab)
 
-        # Search → contact.  Click the LEFT (chat-list) Search button first to
-        # reveal the input, then type.
-        tab.click(S_SEARCH_BUTTON, "Search button (chat list)")
-        time.sleep(0.6)
-        tab.wait(f"!!({S_SEARCH_BOX})", "search input field", timeout=10)
-        tab.focus(S_SEARCH_BOX, "search box")
-        # Clear any stale value
-        tab.eval(
-            "const el=document.activeElement;"
-            "if(el && 'value' in el){"
-            "  const proto=Object.getPrototypeOf(el);"
-            "  const desc=Object.getOwnPropertyDescriptor(proto,'value');"
-            "  if(desc&&desc.set){desc.set.call(el,'');"
-            "    el.dispatchEvent(new Event('input',{bubbles:true}));}"
-            "} else if(el){el.innerText='';el.dispatchEvent(new Event('input',{bubbles:true}));}"
-            "return true;"
-        )
-        time.sleep(0.2)
-        # Type the contact name
-        tab.insert_text(CONTACT)
-        time.sleep(2.0)
-        # Verify the value actually landed
-        actual = tab.eval(
-            "const el=document.activeElement;"
-            "return el ? (el.value!==undefined?el.value:el.innerText||el.textContent||'') : '';"
-        )
-        log(f"search box value after typing: {actual!r}")
-        tab.wait(f"!!({S_CONTACT_RESULT})", f"search result for {CONTACT!r}", timeout=15)
-        tab.click(S_CONTACT_RESULT, f"open chat: {CONTACT}")
+        if cancelled:
+            send_text_message(tab, CANCEL_MSG)
+        else:
+            send_poll(tab)
 
-        # Confirm chat opened by checking the header title contains the name.
-        # Use 25s — WhatsApp can be slow to swap heavy chats.
-        time.sleep(0.6)  # give the click a beat to register
-        tab.wait(f"!!({S_CHAT_OPEN_HEADER})", f"chat header for {CONTACT!r}", timeout=25)
-
-        # Open attach menu, then Poll
-        tab.click(S_ATTACH_BUTTON, "attach (paperclip)")
-        time.sleep(0.6)
-        tab.wait(f"!!({S_POLL_MENU_ITEM})", "Poll menu item", timeout=10)
-        tab.click(S_POLL_MENU_ITEM, "Poll")
-
-        # Poll dialog
-        tab.wait(f"!!({S_POLL_DIALOG})", "poll dialog", timeout=10)
-
-        # Fill question
-        tab.focus(S_POLL_QUESTION, "poll question field")
-        tab.insert_text(POLL_TITLE)
-
-        # Fill options. WhatsApp shows N empty option fields by default; we focus
-        # each and insert the text. If we need more than 2, we'd Tab to add new.
-        opt_count = tab.eval(f"return ({S_POLL_OPTION_INPUTS}).length;") or 0
-        log(f"poll dialog shows {opt_count} option fields")
-        if opt_count < len(POLL_OPTIONS):
-            log(f"WARN: dialog has only {opt_count} option slots; expected {len(POLL_OPTIONS)}.")
-
-        for i, opt_text in enumerate(POLL_OPTIONS):
-            sel = f"({S_POLL_OPTION_INPUTS})[{i}]"
-            tab.focus(sel, f"option {i+1} field")
-            tab.insert_text(opt_text)
-            time.sleep(0.3)
-
-        time.sleep(0.6)
-        if not SEND:
-            log("DRY-RUN: not clicking Send. Re-run with SEND=1 to actually send the poll.")
-            return 0
-
-        # Send
-        tab.wait(f"!!({S_POLL_SEND_BUTTON})", "poll Send button", timeout=10)
-        tab.click(S_POLL_SEND_BUTTON, "Send poll")
-
-        # Verify a poll bubble appeared in the chat
-        tab.wait(
-            "[...document.querySelectorAll('div[role=\"row\"], div[data-id]')]"
-            ".some(r=>/poll/i.test((r.innerText||'')) && r.innerText.includes("
-            + json.dumps(POLL_OPTIONS[0])
-            + "))",
-            "poll bubble visible in chat",
-            timeout=15,
-        )
-        log("✓ poll sent and visible in thread")
         return 0
     finally:
         tab.close()
-
 
 if __name__ == "__main__":
     try:

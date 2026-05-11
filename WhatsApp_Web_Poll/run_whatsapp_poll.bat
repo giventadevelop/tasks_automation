@@ -30,11 +30,11 @@ if "%CONTACT_INPUT%"=="" (
 )
 
 set "SEND_INPUT="
-set /p "SEND_INPUT=Type YES to actually send, anything else = dry-run [Enter = dry-run]: "
-if /I "%SEND_INPUT%"=="YES" (
-    set "SEND=1"
-) else (
+set /p "SEND_INPUT=Press Enter to SEND for real. Type CANCEL for dry-run: "
+if /I "%SEND_INPUT%"=="CANCEL" (
     set "SEND="
+) else (
+    set "SEND=1"
 )
 
 echo.
