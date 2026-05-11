@@ -1,0 +1,4 @@
+# tasks_automation/WhatsApp_Web_Poll
+# Only one third-party Python dep, and it's already installed by the
+# browser-use venv on this machine. Listed here for documentation.
+websocket-client>=1.7
