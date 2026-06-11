@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Build and deploy the calendar automation Windows onefile executable with PyInstaller—no credentials in this guide.">
+    <title>Calendar app — PyInstaller onefile bundle guide</title>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.55; color: #1a1a1a; max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; background: #fafbfd; }
+        h1 { font-size: 1.75rem; color: #0d3b66; }
+        h2 { font-size: 1.2rem; margin-top: 1.5rem; color: #0d3b66; }
+        .toc { background: linear-gradient(135deg, #e8f4f8 0%, #d1e7f0 100%); border-left: 4px solid #0066cc; border-radius: 8px; padding: 16px 20px; margin: 24px 0; }
+        .toc ul { margin: 8px 0 0; padding-left: 1.25rem; }
+        .toc a { color: #0052a3; }
+        .section-intro {
+            background: linear-gradient(135deg, #e8f4f8 0%, #d1e7f0 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+        .section-intro code { background-color: #e8f4f8; color: #0d3b66; padding: 3px 8px; border-radius: 3px; border: 1px solid #b8d4e3; }
+        .section-container {
+            background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+        .section-container.usage {
+            background: linear-gradient(135deg, #f0e6ff 0%, #e6ccff 100%);
+            border-left-color: #9c27b0;
+        }
+        .section-container.parameters {
+            background: linear-gradient(135deg, #fff5e6 0%, #ffe6cc 100%);
+            border-left-color: #ff9800;
+        }
+        .section-container.output {
+            background: linear-gradient(135deg, #e6ffe6 0%, #ccffcc 100%);
+            border-left-color: #28a745;
+        }
+        .section-header {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+            padding: 12px 20px;
+            margin: -20px -20px 20px -20px;
+            border-radius: 8px 8px 0 0;
+            font-size: 1.15em;
+            font-weight: bold;
+        }
+        .section-header.usage {
+            background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
+        }
+        .section-header.parameters {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+        }
+        .section-header.output {
+            background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);
+        }
+        .script-name {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+        .parameters-list {
+            background: linear-gradient(135deg, #fff5e6 0%, #ffe6cc 100%);
+            border-left: 4px solid #ff9800;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 15px 0;
+        }
+        .parameters-list code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+        }
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            padding: 14px 18px;
+            margin: 16px 0;
+            border-radius: 6px;
+        }
+        .info code, .info .code-highlight { background-color: #e8f4f8; color: #0d3b66; padding: 2px 6px; border-radius: 3px; border: 1px solid #b8d4e3; font-family: 'Courier New', monospace; }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 14px 18px;
+            margin: 16px 0;
+            border-radius: 6px;
+        }
+        .warning code { background-color: #e8f4f8; color: #0d3b66; padding: 2px 6px; border-radius: 3px; border: 1px solid #b8d4e3; font-family: 'Courier New', monospace; }
+        .error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 14px 18px;
+            margin: 16px 0;
+            border-radius: 6px;
+        }
+        pre, .code-block {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #b8d4e3;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        pre code { background: transparent; padding: 0; border: 0; color: #0d3b66; }
+        code { background-color: #e8f4f8; color: #0d3b66; padding: 2px 6px; border-radius: 3px; border: 1px solid #b8d4e3; font-family: 'Courier New', monospace; font-size: 0.9em; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) { background: #f8fbff; }
+        tr:hover { background: #eef6ff; }
+        td code { font-size: 0.85em; }
+        .command-block.setup {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border: 2px solid #2196f3;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        .command-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.45);
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+        }
+        .command-type { font-weight: bold; color: #0d3b66; }
+        .command-header-buttons { display: flex; gap: 8px; }
+        .copy-button, .copy-button-template {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .copy-button:hover, .copy-button-template:hover { background-color: #0052a3; }
+        .copy-button.copied, .copy-button-template.copied { background-color: #28a745; }
+        .command-parameters { padding: 15px; background: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(0,0,0,0.1); }
+        .command-parameters h5 { margin: 0 0 12px 0; font-size: 0.9em; color: #333; }
+        .parameter-input { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+        .parameter-input label { font-size: 0.8em; color: #555; font-weight: 600; }
+        .parameter-input input {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .parameter-input input:focus { outline: none; border-color: #0066cc; }
+        .command-content { padding: 14px 16px; font-family: 'Courier New', monospace; font-size: 0.88em; word-break: break-all; color: #0d3b66; }
+        .command-single-line {
+            padding: 12px 15px;
+            background: #e8f4f8;
+            color: #0d3b66;
+            border-top: 1px solid #b8d4e3;
+        }
+        .command-single-line-label { font-size: 0.75em; color: #555; margin-bottom: 6px; }
+        .command-single-line code { background: transparent; border: 0; padding: 0; display: block; white-space: pre-wrap; word-break: break-word; }
+    </style>
+</head>
+<body>
+    <h1>Calendar app — PyInstaller onefile bundle guide</h1>
+    <p>This guide describes how to build and deploy the Windows <strong>onefile</strong> executable for the Google Calendar and contacts automation project. It contains <strong>no API keys, tokens, or secret filenames beyond generic placeholders</strong>.</p>
+
+    <div class="toc">
+        <h2>Table of contents</h2>
+        <ul>
+            <li><a href="#norton">Antivirus (e.g. Norton) and the properties dialog</a></li>
+            <li><a href="#overview">What you are building</a></li>
+            <li><a href="#runtime-config">Runtime configuration (<code class="code-highlight">property_files</code>)</a></li>
+            <li><a href="#satellite">Laundry, YouTube, and <code class="code-highlight">TASKS_AUTOMATION_ROOT</code></a></li>
+            <li><a href="#prereq">Prerequisites</a></li>
+            <li><a href="#build">Build commands (PyInstaller)</a></li>
+            <li><a href="#deploy">Deploy and shortcuts</a></li>
+            <li><a href="#troubleshoot">Troubleshooting</a></li>
+            <li><a href="#files">Spec and path helper files</a></li>
+        </ul>
+    </div>
+
+    <div class="section-intro" id="norton">
+        <h2 style="margin-top:0;color:#0d3b66;">Antivirus (e.g. Norton) and the “properties file not found” dialog</h2>
+        <p>The message you saw lists two locations that were <strong>checked</strong> for <code class="code-highlight">calendar_api_properties.properties</code>: the folder next to your <code class="code-highlight">.exe</code>, then the PyInstaller temp folder under <code class="code-highlight">%LOCALAPPDATA%\Temp\_MEI…</code>. That behavior matches the application’s <strong>config search order</strong>, not a generic “blocked by antivirus” failure.</p>
+        <p><strong>Norton can</strong> sometimes quarantine a new or unsigned <code class="code-highlight">.exe</code>, block <strong>first launch</strong>, or scan the <code class="code-highlight">_MEI</code> extract folder aggressively. In those cases you might see a Norton alert, a failed start, or missing files <strong>if</strong> Norton removed something from a <code class="code-highlight">property_files</code> folder.</p>
+        <p><strong>Norton is unlikely</strong> to be the sole cause when the dialog explicitly says the properties file is missing and tells you to create <code class="code-highlight">property_files</code> beside the executable. The fix is to add that folder and your real config files (created outside this guide), then run again. Optionally add an antivirus exclusion for your install folder or the built <code class="code-highlight">.exe</code> after you trust it, and review Norton’s <strong>Security History</strong> if behavior is still suspicious.</p>
+    </div>
+
+    <div class="section-container" id="overview">
+        <div class="section-header">What you are building</div>
+        <p>The entry script is <code class="script-name">google_calendar_and_contacts_automate.py</code>. PyInstaller reads <code class="script-name">google_calendar_and_contacts_automate.spec</code> and produces a single-file GUI executable named <code class="code-highlight">calendar_automate.exe</code> under the <code class="code-highlight">dist\</code> folder.</p>
+        <p><strong>Onefile</strong> mode unpacks dependencies to a temporary directory at runtime (<code class="code-highlight">_MEI…</code>). Optional data files are only present there if they were available on the machine that ran PyInstaller when the bundle was built.</p>
+    </div>
+
+    <div class="section-container parameters" id="runtime-config">
+        <div class="section-header parameters">Runtime configuration (<code>property_files</code>)</div>
+        <p>At runtime the app looks for a directory named <code class="code-highlight">property_files</code> in this order (frozen build):</p>
+        <ol>
+            <li><strong>Next to the <code class="code-highlight">.exe</code></strong> (recommended for secrets you do not want embedded in the binary).</li>
+            <li><strong>Inside the PyInstaller unpack tree</strong> (only if those files were bundled at build time).</li>
+        </ol>
+        <div class="parameters-list">
+            <p><strong>Typical files (names only — supply your own content offline)</strong></p>
+            <ul>
+                <li><code>calendar_api_properties.properties</code> — application settings (non-secret keys may still live here; treat the file as sensitive).</li>
+                <li><code>google_desktop_oauth_client_contacts_api.json</code> — OAuth client configuration from Google Cloud Console.</li>
+                <li><code>calendar-automate-srvc-account-ref-file.json</code> or equivalent — service account material if you use that mode.</li>
+                <li><code>token.pickle</code> — may be created after first OAuth sign-in; frozen builds often persist the token under user <code class="code-highlight">%APPDATA%</code> (see project <code class="script-name">oauth_setup.py</code>).</li>
+            </ul>
+        </div>
+        <div class="warning">
+            <strong>Do not commit secrets.</strong> Keep <code class="code-highlight">property_files</code> out of version control. This HTML file intentionally avoids real paths to secrets and real key material.
+        </div>
+        <p>Optional: add <code class="code-highlight">TASKS_AUTOMATION_ROOT=&lt;path&gt;</code> to <code class="code-highlight">calendar_api_properties.properties</code> (same line format as other keys). If the process environment variable <code class="code-highlight">TASKS_AUTOMATION_ROOT</code> is already set, it takes precedence and the property is not applied.</p>
+    </div>
+
+    <div class="section-container parameters" id="satellite">
+        <div class="section-header parameters">Laundry, YouTube, and <code>TASKS_AUTOMATION_ROOT</code></div>
+        <div class="section-intro" style="margin-top:0;">
+            <p>The onefile <code class="code-highlight">calendar_automate.exe</code> is <strong>not</strong> a Python interpreter. The GUI must not launch satellite tools with <code class="code-highlight">sys.executable</code> pointing at a <code class="code-highlight">.py</code> file. Laundry and YouTube actions therefore resolve a real <strong>tasks_automation checkout on disk</strong> and start Windows <code class="code-highlight">.bat</code> files in a new console (same pattern as double-clicking the batch file).</p>
+        </div>
+        <p><code class="script-name">calendar_app_paths.resolved_tasks_automation_root()</code> picks the first root that contains <code class="code-highlight">Laundry_TryCents\run_laundry.bat</code>, trying in order:</p>
+        <ol>
+            <li>Environment variable <code class="code-highlight">TASKS_AUTOMATION_ROOT</code> (if set).</li>
+            <li><code class="code-highlight">&lt;folder of your .exe&gt;\tasks_automation</code> (optional sidecar layout).</li>
+            <li>On Windows, a documented example path under <code class="code-highlight">C:\E_Drive\project_workspace\tasks_automation</code> — replace with your own layout using the env var or property on other machines.</li>
+        </ol>
+        <div class="parameters-list">
+            <p><strong>What gets launched (frozen, Windows)</strong></p>
+            <ul>
+                <li><strong>Laundry:</strong> <code class="code-highlight">…\Laundry_TryCents\run_laundry.bat</code> with working directory <code class="code-highlight">Laundry_TryCents</code> (the batch uses <code class="code-highlight">%~dp0</code> and may call WSL or other tools defined inside your repo — keep the checkout intact).</li>
+                <li><strong>YouTube Transcribe / Cleanup transcripts:</strong> <code class="code-highlight">…\YouTube_Transcribe\run_transcribe.bat</code> or <code class="code-highlight">prune_transcripts.bat</code> with working directory <code class="code-highlight">YouTube_Transcribe</code>.</li>
+            </ul>
+        </div>
+        <div class="info">
+            <strong>Tip:</strong> Keep the full <code class="code-highlight">tasks_automation</code> tree (including <code class="code-highlight">Laundry_TryCents</code> and <code class="code-highlight">YouTube_Transcribe</code>) on the same PC as the installed <code class="code-highlight">.exe</code>, or set <code class="code-highlight">TASKS_AUTOMATION_ROOT</code> in the shortcut / system environment to that root.
+        </div>
+    </div>
+
+    <div class="section-container usage" id="prereq">
+        <div class="section-header usage">Prerequisites</div>
+        <ul>
+            <li>Windows with <strong>Python 3.12+</strong> (examples use the <code class="code-highlight">py -3.14</code> launcher; adjust the tag to match your installed version).</li>
+            <li>For frozen installs, a full <code class="code-highlight">tasks_automation</code> checkout on disk (sibling folders <code class="script-name">Laundry_TryCents</code> and <code class="script-name">YouTube_Transcribe</code> under that root) so Laundry / YouTube buttons can run their <code class="code-highlight">.bat</code> files. The PyInstaller spec may still bundle a single <code class="script-name">laundry_automation.py</code> for legacy paths; the GUI prefers <code class="code-highlight">run_laundry.bat</code> from the resolved repo root.</li>
+            <li>Install PyInstaller and runtime dependencies into the <strong>same</strong> interpreter you use to build, for example:</li>
+        </ul>
+    </div>
+
+    <div class="command-block setup" id="block-deps"
+         data-command-type="setup"
+         data-command-base="INSTALL_DEPS"
+         data-template-command="cd &quot;C:\E_Drive\project_workspace\tasks_automation\google_calendar_and_contacts_automate&quot; ; py -3.14 -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties selenium pyinstaller">
+        <div class="command-header">
+            <span class="command-type">Setup — install Python dependencies (Windows single line)</span>
+            <div class="command-header-buttons">
+                <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-deps')" title="Copy template command">Template</button>
+                <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-deps')" title="Copy customized command">Copy</button>
+            </div>
+        </div>
+        <div class="command-parameters">
+            <h5>Customize parameters</h5>
+            <div class="parameter-input">
+                <label for="cmd-deps-workspace">Repository root (parent folder of <code>google_calendar_and_contacts_automate</code>)</label>
+                <input type="text" id="cmd-deps-workspace" value="C:\E_Drive\project_workspace\tasks_automation" oninput="updateCommand('cmd-deps', 'workspace', this.value)" aria-label="Repository root path">
+            </div>
+        </div>
+        <div class="command-content" id="cmd-deps"></div>
+        <div class="command-single-line">
+            <div class="command-single-line-label">Windows single-line</div>
+            <code id="cmd-deps-single-code"></code>
+        </div>
+    </div>
+
+    <div class="section-container usage" id="build">
+        <div class="section-header usage">Build the executable</div>
+        <p>Run PyInstaller from the project subfolder that contains the <code class="code-highlight">.spec</code> file. A clean rebuild is optional (<code class="code-highlight">--clean</code>) after you change dependencies or the spec.</p>
+    </div>
+
+    <div class="command-block setup" id="block-build"
+         data-command-type="setup"
+         data-command-base="BUILD_EXE"
+         data-template-command="cd &quot;C:\E_Drive\project_workspace\tasks_automation\google_calendar_and_contacts_automate&quot; ; py -3.14 -m PyInstaller google_calendar_and_contacts_automate.spec">
+        <div class="command-header">
+            <span class="command-type">Build — PyInstaller (Windows single line)</span>
+            <div class="command-header-buttons">
+                <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-build')" title="Copy template command">Template</button>
+                <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-build')" title="Copy customized command">Copy</button>
+            </div>
+        </div>
+        <div class="command-parameters">
+            <h5>Customize parameters</h5>
+            <div class="parameter-input">
+                <label for="cmd-build-workspace">Repository root (parent folder of <code>google_calendar_and_contacts_automate</code>)</label>
+                <input type="text" id="cmd-build-workspace" value="C:\E_Drive\project_workspace\tasks_automation" oninput="updateCommand('cmd-build', 'workspace', this.value)" aria-label="Repository root path">
+            </div>
+        </div>
+        <div class="command-content" id="cmd-build"></div>
+        <div class="command-single-line">
+            <div class="command-single-line-label">Windows single-line</div>
+            <code id="cmd-build-single-code"></code>
+        </div>
+    </div>
+
+    <div class="command-block setup"
+         data-command-type="setup"
+         data-command-base="BUILD_CLEAN"
+         data-template-command="cd &quot;C:\E_Drive\project_workspace\tasks_automation\google_calendar_and_contacts_automate&quot; ; py -3.14 -m PyInstaller --clean google_calendar_and_contacts_automate.spec">
+        <div class="command-header">
+            <span class="command-type">Optional — clean rebuild</span>
+            <div class="command-header-buttons">
+                <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-clean')" title="Copy template command">Template</button>
+                <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-clean')" title="Copy customized command">Copy</button>
+            </div>
+        </div>
+        <div class="command-parameters">
+            <h5>Customize parameters</h5>
+            <div class="parameter-input">
+                <label for="cmd-clean-workspace">Repository root</label>
+                <input type="text" id="cmd-clean-workspace" value="C:\E_Drive\project_workspace\tasks_automation" oninput="updateCommand('cmd-clean', 'workspace', this.value)" aria-label="Repository root path">
+            </div>
+        </div>
+        <div class="command-content" id="cmd-clean"></div>
+        <div class="command-single-line">
+            <div class="command-single-line-label">Windows single-line</div>
+            <code id="cmd-clean-single-code"></code>
+        </div>
+    </div>
+
+    <div class="section-container output" id="deploy">
+        <div class="section-header output">Deploy</div>
+        <p>After a successful build, copy <code class="code-highlight">dist\calendar_automate.exe</code> from the <code class="script-name">google_calendar_and_contacts_automate</code> folder to your chosen install directory (for example a “Daily startup” applications folder). Place a <code class="code-highlight">property_files</code> directory <strong>in the same folder as the executable</strong> unless you intentionally embed those files at build time.</p>
+        <p>Example copy (adjust paths): <code class="code-highlight">Copy-Item -Force dist\calendar_automate.exe "C:\…\calendar_api\calendar_automate.exe"</code></p>
+        <div class="info">
+            <strong>Tip:</strong> If Windows reports the file is in use, rename the new binary (for example <code class="code-highlight">calendar_automate_new.exe</code>) or close running instances before overwriting. The latest build can be copied as a new name (for example <code class="code-highlight">calendar_automate_rebuilt.exe</code>) and renamed after you close the old process.
+        </div>
+    </div>
+
+    <div class="section-container" id="troubleshoot">
+        <div class="section-header">Troubleshooting</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Symptom</th>
+                    <th>Typical cause</th>
+                    <th>What to do</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>ModuleNotFoundError</code> at startup</td>
+                    <td>Build interpreter missing packages</td>
+                    <td>Install the same imports your script uses, then rebuild with that interpreter.</td>
+                </tr>
+                <tr>
+                    <td>Properties file not found (paths listed)</td>
+                    <td>No <code>property_files</code> beside the <code>.exe</code> and nothing bundled</td>
+                    <td>Create <code>property_files</code> next to the <code>.exe</code> and add your properties and JSON files.</td>
+                </tr>
+                <tr>
+                    <td>Executable will not start; Norton alert</td>
+                    <td>Heuristic / reputation block</td>
+                    <td>Review Security History; restore if quarantined; consider exclusion for trusted build output.</td>
+                </tr>
+                <tr>
+                    <td>Laundry / YouTube button does nothing or “not found”</td>
+                    <td><code>TASKS_AUTOMATION_ROOT</code> not set and default path does not contain <code>Laundry_TryCents\run_laundry.bat</code></td>
+                    <td>Set the env var or add <code>TASKS_AUTOMATION_ROOT</code> to properties; ensure the repo tree exists at that root.</td>
+                </tr>
+                <tr>
+                    <td>Laundry used to fail silently with onefile</td>
+                    <td><code>sys.executable</code> was the <code>.exe</code>, not <code>python.exe</code></td>
+                    <td>Current builds launch <code>run_laundry.bat</code> via <code>cmd.exe</code>; rebuild after updating the Python sources.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section-container" id="files">
+        <div class="section-header">Spec and path helper files</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code class="script-name">google_calendar_and_contacts_automate.spec</code></td>
+                    <td>PyInstaller analysis: entry script, optional <code>datas</code>, hidden imports, onefile <code>EXE</code> name.</td>
+                </tr>
+                <tr>
+                    <td><code class="script-name">calendar_app_paths.py</code></td>
+                    <td>Resolves <code>property_files</code> (exe-adjacent first, then bundle); <code class="code-highlight">resolved_tasks_automation_root()</code> for Laundry / YouTube batch files under the real <code class="code-highlight">tasks_automation</code> tree.</td>
+                </tr>
+                <tr>
+                    <td><code class="script-name">oauth_setup.py</code></td>
+                    <td>OAuth and service-account paths; uses the same property directory resolution.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const commandParams = {};
+
+        function buildCdLine(workspace) {
+            const w = (workspace || '').trim().replace(/[/\\]+$/, '');
+            const sub = 'google_calendar_and_contacts_automate';
+            return 'cd "' + w + '\\' + sub + '" ; ';
+        }
+
+        function updateCommand(commandId, paramName, paramValue) {
+            if (!commandParams[commandId]) commandParams[commandId] = {};
+            commandParams[commandId][paramName] = paramValue;
+            const input = document.getElementById(commandId + '-workspace');
+            const ws = (commandParams[commandId]['workspace'] || (input && input.value) || '').trim();
+            const prefix = buildCdLine(ws);
+            let cmd = '';
+            if (commandId === 'cmd-deps') {
+                cmd = prefix + 'py -3.14 -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties selenium pyinstaller';
+            } else if (commandId === 'cmd-build') {
+                cmd = prefix + 'py -3.14 -m PyInstaller google_calendar_and_contacts_automate.spec';
+            } else if (commandId === 'cmd-clean') {
+                cmd = prefix + 'py -3.14 -m PyInstaller --clean google_calendar_and_contacts_automate.spec';
+            }
+            const el = document.getElementById(commandId);
+            const sl = document.getElementById(commandId + '-single-code');
+            if (el) el.textContent = cmd;
+            if (sl) sl.textContent = cmd;
+        }
+
+        function fallbackCopy(text, button) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'absolute';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+            } catch (e) {
+                console.error(e);
+            }
+            document.body.removeChild(ta);
+            if (button) {
+                button.classList.add('copied');
+                const orig = button.textContent;
+                button.textContent = 'Copied!';
+                setTimeout(function () {
+                    button.classList.remove('copied');
+                    button.textContent = orig;
+                }, 2000);
+            }
+        }
+
+        function copyCommand(button, commandId) {
+            const commandElement = document.getElementById(commandId);
+            if (!commandElement) return;
+            const commandText = commandElement.textContent.trim();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(commandText).then(function () {
+                    button.classList.add('copied');
+                    button.textContent = 'Copied!';
+                    setTimeout(function () {
+                        button.classList.remove('copied');
+                        button.textContent = 'Copy';
+                    }, 2000);
+                }).catch(function () { fallbackCopy(commandText, button); });
+            } else {
+                fallbackCopy(commandText, button);
+            }
+        }
+
+        function copyTemplateCommand(button, commandId) {
+            const block = button.closest('.command-block');
+            if (!block) return;
+            let templateCommand = block.getAttribute('data-template-command') || '';
+            templateCommand = templateCommand.replace(/&quot;/g, '"');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(templateCommand).then(function () {
+                    button.classList.add('copied');
+                    button.textContent = 'Copied!';
+                    setTimeout(function () {
+                        button.classList.remove('copied');
+                        button.textContent = 'Template';
+                    }, 2000);
+                }).catch(function () { fallbackCopy(templateCommand, button); });
+            } else {
+                fallbackCopy(templateCommand, button);
+            }
+        }
+
+        function initializeCommands() {
+            ['cmd-deps', 'cmd-build', 'cmd-clean'].forEach(function (id) {
+                const input = document.getElementById(id + '-workspace');
+                const v = input ? input.value : '';
+                updateCommand(id, 'workspace', v);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeCommands();
+        });
+    </script>
+</body>
+</html>

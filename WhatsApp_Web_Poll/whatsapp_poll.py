@@ -30,11 +30,11 @@ CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
 DEFAULT_TITLE = (
     "Shall we play Volleyball this Friday 6:00 PM at Lake Hiawatha Park — https://g.co/kgs/FrFYPm8\n"
     "📍 4 Volunteers Court, Lake Hiawatha, NJ 07034\n"
-    "Next to Parsippany Rescue & Recovery Unit.\n"
+    "Near to 'Parsippany Rescue & Recovery Unit'.\n"
     "Please confirm by noon Friday."
 )
 DEFAULT_CANCEL_MSG = (
-    "🌧️ Rainy day — meeting cancelled this Friday. We'll regroup next week."
+    "🌧️ Rainy day — volleyball cancelled this Friday. We'll regroup next week."
 )
 POLL_TITLE = os.environ.get("POLL_TITLE", DEFAULT_TITLE)
 CANCEL_MSG = os.environ.get("CANCEL_MSG", DEFAULT_CANCEL_MSG)
@@ -359,29 +359,80 @@ class Tab:
 # When WhatsApp Web changes, update these here.
 
 S_CHAT_LIST = "document.querySelector('div[role=\"grid\"][aria-label*=\"Chat\"], #pane-side')"
-# CRITICAL: there are TWO "Search" buttons in WhatsApp Web — one in the LEFT
-# sidebar (chat-list search, what we want) and one in the chat HEADER (in-chat
-# message search). We must pick the left one by position (x < 600).
-S_SEARCH_BUTTON = (
+# ---- Chat-list search locator ---------------------------------------------
+# WhatsApp Web changes the search field shape every few months. Rather than
+# chase one selector, we try several strategies in priority order. Each
+# returns the element (or null) and the FIRST non-null wins. If ALL fail, we
+# auto-dump every plausible candidate so the next fix is one selector edit.
+#
+# Strategies (most → least specific):
+#   1. Exact aria-label "Search or start a new chat" (current, May 2026)
+#   2. Any aria-label / placeholder matching /search/i  (covers renames + i18n
+#      English variants like "Search chats", "Search input textbox")
+#   3. data-tab="3" — historical WA hook for the chat-search box
+#   4. role="textbox" placed inside or directly above #pane-side (chat list)
+#   5. Geometric heuristic: any visible <input> / contenteditable in the
+#      top-left strip (x<700, y<220, width>100) — language-neutral
+#
+# This means even if WhatsApp removes aria-labels entirely, strategy 5 still
+# finds the right element by position. If they move it to the right pane,
+# strategies 1–3 still match by label.
+_SEARCH_INPUT_EXPR = (
     "(()=>{"
-    "const btns=[...document.querySelectorAll('button[aria-label=\"Search\"], [role=\"button\"][aria-label=\"Search\"]')]"
-    ".filter(b=>b.offsetParent!==null);"
-    "return btns.find(b=>b.getBoundingClientRect().x < 600) || btns[0];"
+    "const vis=e=>e && e.offsetParent!==null;"
+    # ---- 1) exact known aria-label ----
+    "let a=document.querySelector('input[aria-label=\"Search or start a new chat\"], "
+    "[role=\"textbox\"][aria-label=\"Search or start a new chat\"]');"
+    "if(vis(a)) return a;"
+    # ---- 2) any aria-label/placeholder matching /search/i ----
+    "const all=[...document.querySelectorAll('input, [role=\"textbox\"], div[contenteditable=\"true\"]')]"
+    ".filter(vis);"
+    "const byLabel=all.find(e=>{"
+    "  const al=(e.getAttribute('aria-label')||'')+'|'+(e.getAttribute('placeholder')||'')"
+    "          +'|'+(e.getAttribute('title')||'');"
+    "  return /search/i.test(al);"
+    "});"
+    "if(byLabel) return byLabel;"
+    # ---- 3) data-tab=\"3\" (legacy hook) ----
+    "const dt=document.querySelector('[data-tab=\"3\"]');"
+    "if(vis(dt)) return dt;"
+    # ---- 4) role=textbox living near the chat-list pane ----
+    "const pane=document.querySelector('#pane-side');"
+    "if(pane){"
+    "  const paneR=pane.getBoundingClientRect();"
+    "  const near=all.find(e=>{"
+    "    const r=e.getBoundingClientRect();"
+    "    return r.x>=paneR.x-20 && r.x<=paneR.right && r.y<paneR.y+20 && r.width>100;"
+    "  });"
+    "  if(near) return near;"
+    "}"
+    # ---- 5) geometric heuristic: top-left visible text input ----
+    "const tl=all.filter(e=>{"
+    "  const r=e.getBoundingClientRect();"
+    "  return r.x<700 && r.y<220 && r.width>100;"
+    "});"
+    "return tl[0] || null;"
     "})()"
 )
-# After clicking the LEFT search button, the chat-list search input becomes
-# active.  It has aria-label="" (yes, empty) but is the left-most input[role=textbox].
-S_SEARCH_BOX = (
+S_SEARCH_BUTTON = _SEARCH_INPUT_EXPR
+S_SEARCH_BOX = _SEARCH_INPUT_EXPR
+
+# Diagnostic helper: when the search field can't be found, dump everything
+# that LOOKS like an input on the page so we can update the locator in
+# ONE edit. Called automatically from open_contact_chat() on failure.
+_SEARCH_DIAG_EXPR = (
     "(()=>{"
-    "const ins=[...document.querySelectorAll('input[role=\"textbox\"], input[type=\"text\"]')]"
+    "const all=[...document.querySelectorAll('input, [role=\"textbox\"], div[contenteditable=\"true\"]')]"
     ".filter(e=>e.offsetParent!==null);"
-    # Prefer the LEFT-side one (chat list search)
-    "const left=ins.find(e=>{const r=e.getBoundingClientRect();return r.x<400&&r.y<200&&r.width>100;});"
-    "if(left) return left;"
-    # Fallback: any contenteditable in top-left
-    "const ce=[...document.querySelectorAll('div[contenteditable=\"true\"][role=\"textbox\"]')]"
-    ".find(e=>{const r=e.getBoundingClientRect();return r.x<400&&r.y<200;});"
-    "return ce || ins[0];})()"
+    "return JSON.stringify(all.slice(0,30).map(e=>{"
+    "  const r=e.getBoundingClientRect();"
+    "  return {tag:e.tagName, type:e.getAttribute('type'), role:e.getAttribute('role'),"
+    "          aria:e.getAttribute('aria-label'), ph:e.getAttribute('placeholder'),"
+    "          title:e.getAttribute('title'), dataTab:e.getAttribute('data-tab'),"
+    "          ce:e.getAttribute('contenteditable'),"
+    "          x:Math.round(r.x), y:Math.round(r.y), w:Math.round(r.width), h:Math.round(r.height)};"
+    "}));"
+    "})()"
 )
 # Pick a search-result row that is an ACTUAL chat entry, not a section header.
 # Real chat rows are role="gridcell" with tabindex="0".
@@ -470,7 +521,20 @@ def open_contact_chat(tab):
     except Exception:
         pass
 
-    tab.click(S_SEARCH_BUTTON, "Search button (chat list)")
+    # Try to locate the search field. If we can't, dump every input-like
+    # element on the page so the next selector fix is one edit away.
+    try:
+        tab.click(S_SEARCH_BUTTON, "Search button (chat list)")
+    except Exception as exc:
+        log(f"could not locate chat-list search field: {exc}")
+        try:
+            diag = tab.eval(_SEARCH_DIAG_EXPR)
+            log("--- DIAGNOSTIC: all visible input-like elements ---")
+            log(diag or "(none found — is WhatsApp Web actually loaded?)")
+            log("Update _SEARCH_INPUT_EXPR in whatsapp_poll.py using the dump above.")
+        except Exception as exc2:
+            log(f"diagnostic dump failed: {exc2}")
+        raise
     time.sleep(0.6)
     tab.wait(f"!!({S_SEARCH_BOX})", "search input field", timeout=10)
     tab.focus(S_SEARCH_BOX, "search box")

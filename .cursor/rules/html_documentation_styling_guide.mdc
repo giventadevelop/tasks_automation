@@ -1,0 +1,12 @@
+---
+description: MOSC HTML documentation standards for standalone guides and documentation/*.html.
+globs: "**/*.html,documentation/**/*.html,**/documentation/**/*.html"
+---
+
+# HTML documentation styling (MOSC)
+
+Authoring rules and the full design system live in the **html-documentation-styling** skill reference:
+
+`C:\Users\gain\.claude\skills\html-documentation-styling\reference.md`
+
+Summary: light-blue code blocks (`#e8f4f8` / `#0d3b66`), colored `.section-container` + `.section-header`, blue-gradient table headers (not gray), Windows single-line CLI, command blocks with **Template** + **Copy** and `data-template-command`, `script-name` / `parameters-list` / `section-intro` classes, WCAG-oriented contrast.

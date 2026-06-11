@@ -28,6 +28,7 @@ This script uses the Google Calendar API and Google Drive API to create calendar
 5. Set your Anthropic API key:
    - In `property_files/calendar_api_properties.properties` as `ANTHROPIC_API_KEY=your-key`, or
    - As environment variable `ANTHROPIC_API_KEY` (takes precedence)
+6. **PyInstaller / frozen `.exe` only:** Laundry and YouTube buttons run batch files under your real `tasks_automation` checkout (not inside the onefile bundle). Set `TASKS_AUTOMATION_ROOT` in the environment **or** in `calendar_api_properties.properties` (same key) to the folder that contains `Laundry_TryCents` and `YouTube_Transcribe`. If unset, the app tries `tasks_automation` next to the `.exe` and then `C:\E_Drive\project_workspace\tasks_automation` on Windows.
 
 ## Authentication (avoiding the browser)
 

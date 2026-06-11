@@ -11,6 +11,13 @@ from tkinter import filedialog, simpledialog, messagebox
 from jproperties import Properties
 import httpx
 
+from calendar_app_paths import (
+    PROPERTY_SUBDIR,
+    property_files_locations_hint,
+    resolved_property_files_dir,
+    resolved_tasks_automation_root,
+)
+
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -53,26 +60,32 @@ SCOPES = ['https://www.googleapis.com/auth/calendar',
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/contacts']
 
-# Determine the base path and set up paths for properties
-if getattr(sys, 'frozen', False):
-    base_path = sys._MEIPASS
-    properties_dir = 'property_files'  # Directory inside the executable
-else:
-    # Get the directory where the script is located and go up one level
-    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    properties_dir = 'property_files'
+# Config: exe-side property_files first, then bundled MEIPASS (see calendar_app_paths).
+property_dir = resolved_property_files_dir()
+properties_dir = PROPERTY_SUBDIR
 
 # Read the properties file
 properties = Properties()
-properties_path = os.path.join(base_path, properties_dir, 'calendar_api_properties.properties')
+properties_path = os.path.join(property_dir, 'calendar_api_properties.properties')
 
 try:
     logging.info(f"Attempting to read properties file from: {properties_path}")
     with open(properties_path, 'rb') as config_file:
         properties.load(config_file)
     logging.info("Successfully loaded properties file")
+    _tasks_root_prop = properties.get('TASKS_AUTOMATION_ROOT')
+    if _tasks_root_prop and getattr(_tasks_root_prop, 'data', None) and str(_tasks_root_prop.data).strip():
+        os.environ.setdefault('TASKS_AUTOMATION_ROOT', str(_tasks_root_prop.data).strip())
 except FileNotFoundError:
     error_msg = f"Error: Properties file not found at {properties_path}"
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        error_msg += (
+            f"\n\nChecked:\n{property_files_locations_hint()}"
+            f"\n\nCreate folder {PROPERTY_SUBDIR} in:\n  {exe_dir}\n"
+            "and put calendar_api_properties.properties (and your JSON secrets) there, "
+            "then run again."
+        )
     logging.error(error_msg)
     if not getattr(sys, 'frozen', False):
         print(error_msg)
@@ -95,9 +108,12 @@ except Exception as e:
         sys.exit(1)
 
 # Get the service account file path from the properties file
-service_account_file = os.path.join(base_path, properties_dir,
-                               properties.get('SERVICE_ACCOUNT_FILE').data if properties.get('SERVICE_ACCOUNT_FILE')
-                               else 'calendar-automate-srvc-account-ref-file.json')
+service_account_file = os.path.join(
+    property_dir,
+    properties.get('SERVICE_ACCOUNT_FILE').data
+    if properties.get('SERVICE_ACCOUNT_FILE')
+    else 'calendar-automate-srvc-account-ref-file.json',
+)
 
 logging.info(f"Service account file path: {service_account_file}")
 
@@ -459,7 +475,7 @@ def show_initial_dialog():
     screen_width = dialog.winfo_screenwidth()
     screen_height = dialog.winfo_screenheight()
     dialog_width = int(screen_width * 3/8)
-    dialog_height = int(screen_height * 3/8)
+    dialog_height = int(screen_height * 1/2)  # bumped from 3/8 for the 2 extra buttons
 
     # Custom title bar style
     title_frame = tk.Frame(dialog, bg='#2c3e50', height=40)
@@ -498,6 +514,14 @@ def show_initial_dialog():
         result['choice'] = 'laundry'
         dialog.destroy()
 
+    def on_youtube_transcribe():
+        result['choice'] = 'youtube_transcribe'
+        dialog.destroy()
+
+    def on_prune_transcripts():
+        result['choice'] = 'prune_transcripts'
+        dialog.destroy()
+
     def on_delete_calendar():
         result['choice'] = 'delete_calendar'
         dialog.destroy()
@@ -530,6 +554,18 @@ def show_initial_dialog():
                            activebackground='#c0392b',
                            command=on_laundry, **button_style)
     laundry_btn.pack(pady=10)
+
+    youtube_btn = tk.Button(content_frame, text="YouTube Transcribe",
+                           bg='#e67e22', fg='white',
+                           activebackground='#d35400',
+                           command=on_youtube_transcribe, **button_style)
+    youtube_btn.pack(pady=10)
+
+    prune_btn = tk.Button(content_frame, text="Cleanup Transcripts",
+                         bg='#16a085', fg='white',
+                         activebackground='#1abc9c',
+                         command=on_prune_transcripts, **button_style)
+    prune_btn.pack(pady=10)
 
     exit_btn = tk.Button(content_frame, text="Exit",
                          bg='#95a5a6', fg='white',
@@ -957,14 +993,6 @@ def encode_image(image_path):
 def extract_event_details(input_type, event_text, image_path):
     global event_details
     try:
-        # Get base path and properties directory
-        if getattr(sys, 'frozen', False):
-            base_path = sys._MEIPASS
-            properties_dir = 'property_files'
-        else:
-            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            properties_dir = 'property_files'
-
         # Read API key from environment variable only
         api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
         if not api_key:
@@ -1686,35 +1714,85 @@ def main():
 
             elif choice == 'laundry':
                 import subprocess
-                laundry_path = os.path.join(base_path, 'Laundry_TryCents')
-                laundry_main = os.path.join(laundry_path, 'laundry_automation.py')
-                if not os.path.isfile(laundry_main):
-                    messagebox.showerror("Error", f"Laundry automation not found at:\n{laundry_main}")
+                tasks_root = resolved_tasks_automation_root()
+                laundry_path = os.path.join(tasks_root, 'Laundry_TryCents')
+                bat_path = os.path.join(laundry_path, 'run_laundry.bat')
+                if not os.path.isfile(bat_path):
+                    messagebox.showerror(
+                        "Error",
+                        "Laundry launcher not found:\n"
+                        f"{bat_path}\n\n"
+                        "Set environment variable TASKS_AUTOMATION_ROOT to your tasks_automation "
+                        "folder (the one that contains Laundry_TryCents), or place that checkout at "
+                        "tasks_automation next to this .exe, then try again.",
+                    )
                     continue
-                # Run laundry in a subprocess so the main app stays responsive and doesn't block
                 try:
-                    env = os.environ.copy()
-                    env['PYTHONPATH'] = (env.get('PYTHONPATH') or '') + os.pathsep + laundry_path
-                    cmd = [sys.executable, laundry_main]
                     if sys.platform == 'win32':
                         subprocess.Popen(
-                            cmd,
+                            ['cmd.exe', '/c', 'start', '', 'cmd.exe', '/k', bat_path],
                             cwd=laundry_path,
-                            env=env,
-                            creationflags=subprocess.CREATE_NEW_CONSOLE,
                         )
                     else:
-                        subprocess.Popen(cmd, cwd=laundry_path, env=env)
-                    logging.info("Launched Laundry Automation in subprocess")
+                        laundry_main = os.path.join(laundry_path, 'laundry_automation.py')
+                        if os.path.isfile(laundry_main):
+                            subprocess.Popen([sys.executable, laundry_main], cwd=laundry_path)
+                        else:
+                            messagebox.showerror("Error", f"No Windows .bat and no {laundry_main}")
+                            continue
+                    logging.info("Launched Laundry via run_laundry.bat")
                     messagebox.showinfo(
                         "Laundry Automation",
-                        "Laundry automation has been started in a separate window.\n\n"
-                        "A console and Chrome browser should open shortly. If nothing appears, "
-                        "check the Laundry_TryCents folder and run laundry_automation.py from there.",
+                        "Laundry has been started in a new console (run_laundry.bat).\n\n"
+                        "If nothing appears, verify TASKS_AUTOMATION_ROOT and that WSL/Chrome steps in the batch file succeed.",
                     )
                 except Exception as e:
                     logging.error(f"Failed to start laundry automation: {e}")
                     messagebox.showerror("Error", f"Could not start laundry automation:\n{str(e)}")
+
+            elif choice in ('youtube_transcribe', 'prune_transcripts'):
+                import subprocess
+                tasks_root = resolved_tasks_automation_root()
+                yt_path = os.path.join(tasks_root, 'YouTube_Transcribe')
+                bat_name = 'run_transcribe.bat' if choice == 'youtube_transcribe' else 'prune_transcripts.bat'
+                bat_path = os.path.join(yt_path, bat_name)
+                if not os.path.isfile(bat_path):
+                    messagebox.showerror(
+                        "Error",
+                        f"YouTube_Transcribe launcher not found at:\n{bat_path}\n\n"
+                        "Set TASKS_AUTOMATION_ROOT to your tasks_automation checkout (folder that "
+                        "contains YouTube_Transcribe), or keep the default path that contains "
+                        "Laundry_TryCents\\run_laundry.bat.",
+                    )
+                    continue
+                try:
+                    if sys.platform == 'win32':
+                        # Launch the .bat in a new console window so the user can
+                        # see prompts (URL input, model picker) and progress logs.
+                        subprocess.Popen(
+                            ['cmd.exe', '/c', 'start', '', 'cmd.exe', '/k', bat_path],
+                            cwd=yt_path,
+                        )
+                    else:
+                        # WSL/Linux fallback — just run the python script directly.
+                        py_script = os.path.join(yt_path, 'transcribe_youtube.py')
+                        if choice == 'prune_transcripts':
+                            subprocess.Popen([sys.executable, py_script, '--prune-days', '20'], cwd=yt_path)
+                        else:
+                            subprocess.Popen([sys.executable, py_script], cwd=yt_path)
+                    logging.info(f"Launched {bat_name}")
+                    label = "YouTube Transcribe" if choice == 'youtube_transcribe' else "Cleanup Transcripts"
+                    extra = ("Paste a YouTube URL when prompted, choose a Whisper model, "
+                             "then wait for the transcript. Outputs go to YouTube_Transcribe/transcripts/."
+                             if choice == 'youtube_transcribe'
+                             else "Old transcripts (default >20 days) will be deleted.")
+                    messagebox.showinfo(
+                        label,
+                        f"{label} started in a new console window.\n\n{extra}"
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to start {bat_name}: {e}")
+                    messagebox.showerror("Error", f"Could not start {bat_name}:\n{str(e)}")
 
     except Exception as e:
         root = tk.Tk()
