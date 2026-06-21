@@ -1,0 +1,187 @@
+---
+description: MOSC redesign hub card images — all four rounded corners + full portrait containment without bottom gap (MoscHubCardMedia intrinsic vs landscape frames)
+globs: src/app/mosc-redesign/**/*, src/styles/mosc-redesign-shell.css
+alwaysApply: false
+---
+
+# MOSC Redesign Hub Card: Rounded Corners + Containment
+
+## Overview
+
+Hub section cards on `/mosc-redesign/*` (Catholicate, Holy Synod, Saints, The Church, Directory, etc.) use a shared **`MoscHubCardMedia`** component. The requirement is:
+
+1. **`rounded-xl` on all four corners** of the visible photo (not just top-left/top-right).
+2. **Full image visible** — no head crop on portraits.
+3. **No empty letterbox gap** at the bottom of the image frame.
+
+**Canonical implementation:** [`src/app/mosc-redesign/(syro)/components/MoscHubCardMedia.tsx`](mdc:src/app/mosc-redesign/(syro)/components/MoscHubCardMedia.tsx)  
+**Shell CSS:** [`src/styles/mosc-redesign-shell.css`](mdc:src/styles/mosc-redesign-shell.css) (`.mosc-hub-card-media*`, `.mosc-hub-card-media--intrinsic`)
+
+---
+
+## Problem: Why Naive Fixes Fail
+
+| Approach | Rounded corners | Full image | Bottom gap |
+|----------|-----------------|------------|------------|
+| Fixed landscape box + `object-cover` | ✅ All four | ❌ Crops heads | ✅ None |
+| Fixed aspect box + `fill` + `object-contain` | ❌ Only top two on visible photo | ✅ Full image | ❌ White strip below image |
+| Intrinsic height + `w-full h-auto` + clip | ✅ All four | ✅ Full image | ✅ None |
+
+**Root cause of “square bottom corners”:** With `object-contain` inside a **taller fixed aspect box**, the photo is a smaller rectangle pinned to the top. The container is rounded, but the **visible image** ends with square bottom edges above empty space.
+
+**Root cause of bottom padding/gap:** Fixed `aspect-[2/3]` (or any ratio that does not match the asset) + `fill` forces extra height the image never fills.
+
+---
+
+## Solution: Two Frame Modes
+
+### 1. Portrait (default) — intrinsic height
+
+Use when the card shows **portraits, icons, or mixed hub photos** (Catholicate, Saints, Holy Synod, The Church, etc.).
+
+- **Container:** `max-w-[220px]`, `rounded-xl`, `overflow-hidden`, **`height: auto`** (class `mosc-hub-card-media--intrinsic`).
+- **Image:** Next.js `Image` with **`width` / `height`** (layout hint), **`w-full h-auto`** — **not** `fill`.
+- **Clip:** Parent `overflow: hidden` + `border-radius: 0.75rem` on container, wrapper `span`, and `img`.
+- **Result:** Frame **hugs** the image; all four corners clip correctly; no bottom letterbox.
+
+```tsx
+// ✅ DO: Default portrait — no props needed
+<MoscHubCardMedia src={card.image} alt={card.alt} />
+
+// ✅ DO: Match card background when frame sits on tinted card
+<MoscHubCardMedia
+  src={card.image}
+  alt={card.alt}
+  padded={false}
+  frameClassName="bg-parchment-light ring-0"
+/>
+```
+
+```tsx
+// ❌ DON'T: Fixed aspect + fill + contain for portraits
+<div className="aspect-[2/3] relative">
+  <Image fill className="object-contain" />
+</div>
+```
+
+### 2. Landscape — fixed tile + cover
+
+Use **only** for wide directory-style banners (`/mosc-redesign/directory`).
+
+- **Container:** `max-w-[280px] aspect-[280/168]`, `overflow-hidden`, `rounded-xl`.
+- **Image:** `fill` + `object-cover` (+ optional `objectPosition="top"`).
+- **Trade-off:** Slight crop acceptable for banner tiles; not for portrait saints/Catholicoi.
+
+```tsx
+// ✅ DO: Directory banners
+<MoscHubCardMedia src={imageUrl} alt={title} frame="landscape" />
+```
+
+---
+
+## CSS Requirements (`mosc-redesign-shell.css`)
+
+Landscape / `fill` tiles use absolute Next.js wrapper rules (`.mosc-hub-card-media > span { position: absolute; inset: 0 }`).
+
+Portrait intrinsic mode **must override** those rules:
+
+```css
+.mosc-hub-card-media--intrinsic {
+  height: auto !important;
+  aspect-ratio: auto !important;
+  line-height: 0;
+}
+
+.mosc-hub-card-media--intrinsic > span {
+  position: relative !important;
+  height: auto !important;
+  overflow: hidden !important;
+  border-radius: 0.75rem !important;
+}
+
+.mosc-hub-card-media--intrinsic img {
+  width: 100% !important;
+  height: auto !important;
+  object-fit: contain !important;
+  border-radius: 0.75rem !important;
+}
+```
+
+**Do not remove** `.mosc-hub-card-media--intrinsic` when editing hub CSS — portrait cards will revert to square bottom corners and bottom gaps.
+
+---
+
+## Component API Quick Reference
+
+| Prop | Default | Use |
+|------|---------|-----|
+| `frame` | `'portrait'` | `'landscape'` only for Directory-style banners |
+| `padded` | `true` | `false` when image sits flush in card (e.g. Catholicate grid) |
+| `frameClassName` | — | Match card bg: `bg-parchment-light`, `bg-white`, `ring-0` |
+| `objectPosition` | `'center'` | `'top'` for landscape cover only |
+| `unoptimized` | — | Local/static assets when needed |
+
+Placeholders use fixed `aspect-[2/3]` via `MoscHubCardMediaPlaceholder` (no image to size intrinsically).
+
+---
+
+## Decision Tree
+
+```
+Hub card image on /mosc-redesign/*?
+│
+├─ Wide directory banner tile?
+│  └─ YES → frame="landscape" + fill + object-cover
+│
+└─ Portrait, saint, Catholicoi, icon, or general hub photo?
+   └─ YES → default portrait + MoscHubCardMedia (intrinsic)
+            • NO fixed aspect on container
+            • NO Image fill
+            • w-full h-auto + overflow:hidden rounded-xl
+```
+
+---
+
+## Pages Using This Pattern
+
+- **Portrait (default):** catholicate, holy-synod, saints, the-church, administration, training, publications, lectionary, institutions, theological-seminaries, ecumenical, downloads-old
+- **Landscape:** directory (`frame="landscape"`)
+
+When adding a new hub grid under `src/app/mosc-redesign/(syro)/`, **import and use `MoscHubCardMedia`** — do not hand-roll `Image` + fixed aspect boxes.
+
+---
+
+## Troubleshooting
+
+### Only top corners rounded?
+- Container still has fixed `aspect-*` with `fill` + `contain`. Switch to intrinsic portrait mode.
+
+### White strip below image inside frame?
+- Same as above — frame is taller than the photo. Remove fixed aspect; use `h-auto` intrinsic sizing.
+
+### Head cropped?
+- Accidentally using `object-cover` or `frame="landscape"` on a portrait card. Use default portrait frame.
+
+### Next.js wrapper not clipping?
+- Ensure shell CSS loads (`mosc-redesign-shell.css` in syro layout).
+- Verify classes: `mosc-hub-card-media`, `mosc-hub-card-media--intrinsic`, `mosc-hub-card-image--intrinsic`.
+
+---
+
+## Static asset paths (no hardcoded production host)
+
+For files already under `public/`, **always use site-relative paths** — never hardcode `https://www.mosc-temp.com/...` or `https://mosc.in/wp-content/...` for static images.
+
+- **MOSC assets:** `/mosc/assets/images/mosc_images/...` (maps to `public/mosc/assets/images/mosc_images/`)
+- **Catholicate portraits:** `/images/catholicate/...` (maps to `public/images/catholicate/`)
+- **Hub cards / saints:** `/images/saints/...`, `/images/catholicate/Catholicos-N.jpg`, etc.
+
+This keeps localhost, staging, and production working without cross-origin or Next `Image` remote-pattern dependency.
+
+---
+
+## Related Rules
+
+- [Image Containment Prevention](mdc:.cursor/rules/image_containment_prevention_hero_images_cards.mdc) — general `object-contain` + `h-auto` pattern for heroes/cards
+- [Hero Mobile Image Containment](mdc:.cursor/rules/hero_mobile_image_containment_aspect_ratio.mdc) — aspect-ratio matching when container ratio can be fixed to one asset ratio
+- [Portrait Image Card Layout](mdc:.cursor/rules/portrait_image_card_layout_centering.mdc) — centering portrait cards in grids

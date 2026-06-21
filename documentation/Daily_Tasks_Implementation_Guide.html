@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Daily Tasks Automation — PyInstaller build, desktop install, dashboard manual vs scheduled launches. No credentials in this guide.">
+    <title>Daily Tasks Automation — Implementation Guide</title>
+    <style>
+        body { max-width: 1200px; margin: 0 auto; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
+        h1 { font-size: 2.5em; border-bottom: 3px solid #0066cc; padding-bottom: 0.3em; margin-top: 0; }
+        h2 { font-size: 1.8em; border-left: 4px solid #0066cc; padding-left: 15px; margin-top: 1.5em; }
+        h3 { font-size: 1.3em; color: #333; }
+        .toc { background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%); border-left: 4px solid #0066cc; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1); }
+        .toc h2 { margin-top: 0; border: none; padding-left: 0; }
+        .toc ul { margin: 0; padding-left: 1.25em; }
+        .toc a { color: #0066cc; }
+        .section-intro { background: linear-gradient(135deg, #e8f4f8 0%, #d1e7f0 100%); border-left: 4px solid #0066cc; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1); }
+        .section-container { background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%); border-left: 4px solid #0066cc; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1); }
+        .section-container.usage { background: linear-gradient(135deg, #f0e6ff 0%, #e6ccff 100%); border-left-color: #9c27b0; }
+        .section-header { background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%); color: white; padding: 12px 20px; margin: -20px -20px 20px -20px; border-radius: 8px 8px 0 0; font-size: 1.2em; font-weight: bold; }
+        .section-header.usage { background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); }
+        .info { background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 15px 18px; margin: 15px 0; border-radius: 4px; }
+        .warning { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px 18px; margin: 15px 0; border-radius: 4px; }
+        .success { background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px 18px; margin: 15px 0; border-radius: 4px; }
+        .script-name { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 5px; font-family: 'Courier New', monospace; font-weight: bold; display: inline-block; }
+        .parameters-list { background: linear-gradient(135deg, #fff5e6 0%, #ffe6cc 100%); border-left: 4px solid #ff9800; border-radius: 8px; padding: 15px 20px; margin: 15px 0; }
+        .parameters-list code { background-color: #e8f4f8; color: #0d3b66; padding: 3px 8px; border-radius: 3px; border: 1px solid #b8d4e3; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%); color: white; font-weight: bold; text-transform: uppercase; font-size: 0.9em; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        td code, code { background-color: #e8f4f8; color: #0d3b66; padding: 2px 6px; border-radius: 3px; border: 1px solid #b8d4e3; font-family: 'Courier New', monospace; font-size: 0.9em; }
+        .flow-diagram { background: #fff; border: 1px solid #b8d4e3; border-radius: 8px; padding: 16px 20px; font-family: 'Courier New', monospace; font-size: 0.88em; color: #0d3b66; overflow-x: auto; white-space: pre; line-height: 1.5; }
+        .command-block { border: 2px solid #2196f3; border-radius: 8px; margin: 20px 0; overflow: hidden; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); }
+        .command-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 15px; background: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(0,0,0,0.1); }
+        .command-type { font-weight: bold; color: #333; }
+        .command-header-buttons { display: flex; gap: 8px; }
+        .copy-button, .copy-button-template { border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: bold; }
+        .copy-button { background-color: #0066cc; color: white; }
+        .copy-button-template { background-color: #6c757d; color: white; }
+        .copy-button.copied, .copy-button-template.copied { background-color: #28a745; }
+        .command-content { padding: 15px; font-family: 'Courier New', monospace; font-size: 0.95em; background: #fff; color: #0d3b66; word-break: break-all; }
+        .command-single-line { padding: 12px 15px; background: #e8f4f8; border-top: 1px solid #b8d4e3; }
+        .command-single-line-label { font-size: 0.75em; color: #666; margin-bottom: 6px; }
+        .command-single-line code { background: transparent; border: none; padding: 0; display: block; white-space: pre-wrap; }
+        .parameter-input label { font-size: 0.85em; font-weight: 600; color: #555; display: block; margin-bottom: 4px; }
+        .parameter-input input { width: 100%; max-width: 520px; padding: 8px 12px; border: 2px solid #ddd; border-radius: 4px; font-family: 'Courier New', monospace; }
+        .command-parameters { padding: 15px; background: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Daily Tasks Automation — Implementation Guide</h1>
+        <p>Build, install, and run the <strong>Daily Tasks Automation</strong> dashboard (<code class="script-name">calendar_automate.exe</code> or Python entry script) with satellite tools: Laundry, WhatsApp Poll, and YouTube Transcribe.</p>
+        <p><strong>This document contains no API keys, tokens, OAuth JSON bodies, or real secret paths.</strong> Supply your own <code>property_files</code> offline.</p>
+
+        <div class="toc">
+            <h2>Table of contents</h2>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#layout">Repository layout</a></li>
+                <li><a href="#build">Build the Windows .exe (PyInstaller)</a></li>
+                <li><a href="#deploy">Deploy and <code>property_files</code></a></li>
+                <li><a href="#desktop">Desktop shortcut (single icon)</a></li>
+                <li><a href="#dashboard">Dashboard vs scheduled launches</a></li>
+                <li><a href="#edge">Microsoft Edge CDP profiles</a></li>
+                <li><a href="#troubleshoot">Troubleshooting</a></li>
+                <li><a href="#related">Related documentation</a></li>
+            </ul>
+        </div>
+
+        <div class="section-intro" id="overview">
+            <h2 style="margin-top:0;color:#0d3b66;">What you are shipping</h2>
+            <ul>
+                <li><strong>Main app:</strong> Tkinter dashboard — Calendar, Contacts, Laundry, WhatsApp Poll, YouTube tools.</li>
+                <li><strong>Packaging:</strong> PyInstaller <strong>onefile</strong> → <code>calendar_automate.exe</code> (windowed, no console).</li>
+                <li><strong>Satellite automations:</strong> Stay as folders under <code>&lt;REPO_ROOT&gt;</code>; the frozen .exe launches their <code>.bat</code> files in a new console — it is not a Python interpreter for those scripts.</li>
+            </ul>
+        </div>
+
+        <h2 id="layout">Repository layout</h2>
+        <div class="section-container">
+            <div class="section-header">Key folders under <code>&lt;REPO_ROOT&gt;</code></div>
+            <table>
+                <thead><tr><th>Folder</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td><code>google_calendar_and_contacts_automate/</code></td><td>Dashboard app, PyInstaller <code>.spec</code>, OAuth helpers</td></tr>
+                    <tr><td><code>property_files/</code></td><td>Config templates — <strong>never commit real secrets</strong></td></tr>
+                    <tr><td><code>Laundry_TryCents/</code></td><td>TryCents order flow via Edge CDP</td></tr>
+                    <tr><td><code>WhatsApp_Web_Poll/</code></td><td>Volleyball poll / cancel via Edge CDP</td></tr>
+                    <tr><td><code>YouTube_Transcribe/</code></td><td>Transcript download scripts</td></tr>
+                    <tr><td><code>documentation/</code></td><td>This guide, desktop shortcut scripts</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="build">Build the Windows .exe (PyInstaller)</h2>
+        <div class="section-container usage">
+            <div class="section-header usage">Build steps</div>
+            <ol>
+                <li>Use one Python 3.12+ interpreter for install and build.</li>
+                <li>Install runtime deps + PyInstaller (see command below).</li>
+                <li>From <code>google_calendar_and_contacts_automate/</code>, run PyInstaller on <code class="script-name">google_calendar_and_contacts_automate.spec</code>.</li>
+                <li>Output: <code>google_calendar_and_contacts_automate\dist\calendar_automate.exe</code></li>
+            </ol>
+            <div class="warning"><strong>Do not use</strong> <code class="script-name">calendar_automate.spec</code> in the same folder — it is a legacy spec with stale absolute paths.</div>
+        </div>
+
+        <div class="command-block" data-template-command="cd &quot;&lt;REPO_ROOT&gt;\google_calendar_and_contacts_automate&quot; &amp;&amp; py -3 -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties pyinstaller websocket-client">
+            <div class="command-header">
+                <span class="command-type">Install build dependencies</span>
+                <div class="command-header-buttons">
+                    <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-deps')">Template</button>
+                    <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-deps')">Copy</button>
+                </div>
+            </div>
+            <div class="command-parameters">
+                <label for="repo-deps">Repository root (<code>&lt;REPO_ROOT&gt;</code>)</label>
+                <input type="text" id="repo-deps" value="F:\project_workspace\tasks_automation" oninput="syncRepo(this.value)">
+            </div>
+            <div class="command-content" id="cmd-deps"></div>
+            <div class="command-single-line"><div class="command-single-line-label">Windows single-line</div><code id="cmd-deps-single"></code></div>
+        </div>
+
+        <div class="command-block" data-template-command="cd &quot;&lt;REPO_ROOT&gt;\google_calendar_and_contacts_automate&quot; &amp;&amp; py -3 -m PyInstaller google_calendar_and_contacts_automate.spec">
+            <div class="command-header">
+                <span class="command-type">Build onefile executable</span>
+                <div class="command-header-buttons">
+                    <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-build')">Template</button>
+                    <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-build')">Copy</button>
+                </div>
+            </div>
+            <div class="command-content" id="cmd-build"></div>
+            <div class="command-single-line"><div class="command-single-line-label">Windows single-line</div><code id="cmd-build-single"></code></div>
+        </div>
+
+        <h2 id="deploy">Deploy and <code>property_files</code></h2>
+        <div class="section-container">
+            <div class="section-header">Runtime configuration (no secrets in this guide)</div>
+            <p>Frozen builds look for <code>property_files</code> beside the <code>.exe</code> first, then the PyInstaller unpack tree if files were bundled at build time.</p>
+            <div class="parameters-list">
+                <p><strong>Typical filenames only (create offline with your own values):</strong></p>
+                <ul>
+                    <li><code>calendar_api_properties.properties</code></li>
+                    <li><code>google_desktop_oauth_client_contacts_api.json</code> (OAuth client metadata from Google Cloud Console)</li>
+                    <li><code>calendar-automate-srvc-account-ref-file.json</code> (if using service account mode)</li>
+                    <li><code>token.pickle</code> (often created after first sign-in; may also live under <code>%APPDATA%</code>)</li>
+                </ul>
+            </div>
+            <div class="warning"><strong>Never</strong> embed real credentials in HTML, git, or the PyInstaller bundle unless you intend to. Prefer <code>property_files</code> next to the installed <code>.exe</code>.</div>
+            <p>Set <code>TASKS_AUTOMATION_ROOT=&lt;REPO_ROOT&gt;</code> so Laundry / WhatsApp / YouTube buttons find their <code>.bat</code> files. The launcher shortcut (below) sets this automatically.</p>
+        </div>
+
+        <h2 id="desktop">Desktop shortcut (single icon)</h2>
+        <div class="section-container">
+            <div class="section-header">One-click desktop access</div>
+            <ol>
+                <li>From <code>&lt;REPO_ROOT&gt;\documentation\</code>, run <code class="script-name">create_desktop_shortcut.bat</code>.</li>
+                <li>This creates <strong>Daily Tasks Automation.lnk</strong> on your Desktop.</li>
+                <li>The shortcut targets <code class="script-name">launch_daily_tasks_dashboard.bat</code>, which:
+                    <ul>
+                        <li>Sets <code>TASKS_AUTOMATION_ROOT</code> to the repo root</li>
+                        <li>Starts <code>dist\calendar_automate.exe</code> if built, otherwise <code>py -3 google_calendar_and_contacts_automate.py</code></li>
+                    </ul>
+                </li>
+            </ol>
+            <div class="success">
+                <strong>Recommended install layout:</strong><br>
+                Keep the full <code>tasks_automation</code> tree on disk. Place <code>property_files</code> next to <code>calendar_automate.exe</code> if you copy the .exe to a separate install folder — or run from the repo <code>dist</code> folder during development.
+            </div>
+        </div>
+
+        <div class="command-block" data-template-command="cd &quot;&lt;REPO_ROOT&gt;\documentation&quot; &amp;&amp; create_desktop_shortcut.bat">
+            <div class="command-header">
+                <span class="command-type">Create desktop shortcut</span>
+                <div class="command-header-buttons">
+                    <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-shortcut')">Copy</button>
+                </div>
+            </div>
+            <div class="command-content" id="cmd-shortcut">cd "&lt;REPO_ROOT&gt;\documentation" &amp;&amp; create_desktop_shortcut.bat</div>
+        </div>
+
+        <h2 id="dashboard">Dashboard vs scheduled launches</h2>
+        <div class="section-container">
+            <div class="section-header">Manual (dashboard) vs automatic (Task Scheduler)</div>
+            <table>
+                <thead>
+                    <tr><th>Feature</th><th>Dashboard button</th><th>Scheduled / double-click .bat</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>WhatsApp Poll</strong></td>
+                        <td>GUI asks <strong>contact name</strong> and <strong>send vs dry-run</strong>, then runs <code class="script-name">run_whatsapp_poll.bat</code> with <code>SKIP_PROMPTS=1</code></td>
+                        <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code> — no prompts; fixed contact; always <code>SEND=1</code>; Thursday season gates</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Laundry</strong></td>
+                        <td>Confirmation dialog, then <code class="script-name">run_laundry.bat</code> in new console</td>
+                        <td>Double-click <code class="script-name">run_laundry.bat</code> or Hermes/cron wrapper</td>
+                    </tr>
+                    <tr>
+                        <td><strong>YouTube</strong></td>
+                        <td>Console prompts in <code class="script-name">run_transcribe.bat</code></td>
+                        <td>Same batch files</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="flow-diagram">Dashboard → WhatsApp Poll button
+    → Tk dialog: contact + send/dry-run
+    → run_whatsapp_poll.bat (SKIP_PROMPTS=1, CONTACT, SEND env)
+    → start_edge_cdp.bat → whatsapp_poll.py
+
+Dashboard → Laundry button
+    → Tk Yes/No confirm
+    → run_laundry.bat
+    → start_edge_cdp.bat → _cdp_driver.py
+
+Task Scheduler (Thursday) → run_whatsapp_poll_scheduled.bat
+    → schedule_gate.py (no GUI)
+    → fixed CONTACT, SEND=1, logs only</div>
+        </div>
+
+        <h2 id="edge">Microsoft Edge CDP profiles</h2>
+        <div class="section-container">
+            <div class="section-header">Port 9222 — one browser at a time</div>
+            <table>
+                <thead><tr><th>Automation</th><th>Edge profile</th><th>Start script</th></tr></thead>
+                <tbody>
+                    <tr><td>WhatsApp Poll</td><td><code>C:\edge-cdp</code></td><td><code>WhatsApp_Web_Poll\start_edge_cdp.bat</code></td></tr>
+                    <tr><td>Laundry TryCents</td><td><code>C:\edge-cdp-laundry</code></td><td><code>Laundry_TryCents\start_edge_cdp.bat</code></td></tr>
+                </tbody>
+            </table>
+            <p>Log in once per profile (WhatsApp Web / TryCents). Quit the other automation’s Edge instance before switching — both use CDP port <code>9222</code>.</p>
+        </div>
+
+        <h2 id="troubleshoot">Troubleshooting</h2>
+        <div class="section-container">
+            <div class="section-header">Common issues</div>
+            <table>
+                <thead><tr><th>Symptom</th><th>What to do</th></tr></thead>
+                <tbody>
+                    <tr><td>Laundry / WhatsApp button “not found”</td><td>Set <code>TASKS_AUTOMATION_ROOT</code> to <code>&lt;REPO_ROOT&gt;</code> or use the desktop launcher shortcut.</td></tr>
+                    <tr><td>Properties file missing</td><td>Add <code>property_files</code> beside <code>calendar_automate.exe</code> with your offline config.</td></tr>
+                    <tr><td>CDP port in use</td><td>Close all Chrome/Edge; run the correct <code>start_edge_cdp.bat</code>.</td></tr>
+                    <tr><td>Scheduled poll ran twice</td><td>Check stamp file under <code>%LOCALAPPDATA%\tasks_automation\</code>; see WhatsApp schedule HTML doc.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="related">Related documentation</h2>
+        <div class="section-container">
+            <div class="section-header">Deeper dives (subfolders)</div>
+            <ul>
+                <li><code>google_calendar_and_contacts_automate/documentation/Calendar_App_PyInstaller_Bundle_Guide.html</code> — PyInstaller detail, antivirus notes</li>
+                <li><code>WhatsApp_Web_Poll/documentation/whatsapp_poll_thursday_schedule.html</code> — Thursday Task Scheduler</li>
+                <li><code>Laundry_TryCents/documentation/laundry_hermes_weekly_schedule.html</code> — Hermes weekly laundry</li>
+                <li><code>google_calendar_and_contacts_automate/calendar_api_README.md</code> — OAuth and API setup</li>
+            </ul>
+        </div>
+    </main>
+    <script>
+        let repoRoot = 'F:\\project_workspace\\tasks_automation';
+        function q(s) { return (repoRoot || '').replace(/[/\\]+$/, ''); }
+        function refreshCommands() {
+            const r = q();
+            const deps = 'cd "' + r + '\\google_calendar_and_contacts_automate" && py -3 -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties pyinstaller websocket-client';
+            const build = 'cd "' + r + '\\google_calendar_and_contacts_automate" && py -3 -m PyInstaller google_calendar_and_contacts_automate.spec';
+            const shortcut = 'cd "' + r + '\\documentation" && create_desktop_shortcut.bat';
+            document.getElementById('cmd-deps').textContent = deps;
+            document.getElementById('cmd-deps-single').textContent = deps;
+            document.getElementById('cmd-build').textContent = build;
+            document.getElementById('cmd-build-single').textContent = build;
+            document.getElementById('cmd-shortcut').textContent = shortcut;
+        }
+        function syncRepo(v) { repoRoot = v; refreshCommands(); }
+        function copyCommand(btn, id) {
+            const t = document.getElementById(id).textContent.trim();
+            navigator.clipboard.writeText(t).then(() => { btn.classList.add('copied'); btn.textContent = 'Copied!'; setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy'; }, 2000); });
+        }
+        function copyTemplateCommand(btn, id) { copyCommand(btn, id); }
+        refreshCommands();
+    </script>
+</body>
+</html>

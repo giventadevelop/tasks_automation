@@ -1,0 +1,388 @@
+---
+description: CSS rules and patterns for displaying images without cropping or truncation
+globs: **/*.tsx, **/*.jsx, **/*.ts, **/*.js, **/*.css
+alwaysApply: true
+---
+
+# Image Containment Prevention Pattern
+
+## **Overview**
+This rule defines the correct CSS patterns for displaying banner, hero, and sponsor images that must be fully visible without cropping or truncation on any side. This pattern ensures images maintain their aspect ratio and are contained within their containers.
+
+## **Problem Solved**
+- **Image Cropping**: Prevents images from being cut off on left, right, top, or bottom edges
+- **Aspect Ratio Preservation**: Maintains original image proportions
+- **Consistent Display**: Ensures images display the same way across different screen sizes
+- **User Experience**: Users can see complete images without important content being hidden
+
+## **Core Pattern**
+
+### **Container Styling**
+```tsx
+// ✅ DO: Use flexible height container
+<div className="relative w-full h-auto rounded-t-2xl overflow-hidden">
+  {/* Image content */}
+</div>
+
+// ❌ DON'T: Use fixed height container
+<div className="relative w-full h-[448px] rounded-t-2xl overflow-hidden">
+  {/* This causes cropping */}
+</div>
+```
+
+### **Image Styling**
+```tsx
+// ✅ DO: Use object-contain with flexible dimensions
+<Image
+  src={imageUrl}
+  alt="Description"
+  width={800}
+  height={600}
+  className="w-full h-auto object-contain group-hover:scale-105 transition-transform duration-300"
+  style={{
+    backgroundColor: 'transparent',
+    borderRadius: '1rem 1rem 0 0'
+  }}
+/>
+
+// ❌ DON'T: Use object-cover with fixed dimensions
+<Image
+  src={imageUrl}
+  alt="Description"
+  width={800}
+  height={600}
+  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+  style={{
+    borderRadius: '1rem 1rem 0 0'
+  }}
+/>
+```
+
+## **Key CSS Properties**
+
+### **Container Requirements**
+- **`relative`**: Enables absolute positioning of child elements (badges, overlays)
+- **`w-full`**: Full width of parent container
+- **`h-auto`**: **CRITICAL**: Flexible height allows image to maintain aspect ratio
+- **`rounded-t-2xl`**: Rounded top corners (1rem radius)
+- **`overflow-hidden`**: Clips content to rounded corners
+
+### **Image Requirements**
+- **`w-full`**: Full width of container
+- **`h-auto`**: **CRITICAL**: Flexible height maintains aspect ratio
+- **`object-contain`**: **CRITICAL**: Shows complete image without cropping (alternative to `object-cover`)
+- **`group-hover:scale-105`**: Optional hover effect for interactivity
+- **`transition-transform duration-300`**: Smooth hover animation
+- **`backgroundColor: 'transparent'`**: Allows card gradient to show through
+- **`borderRadius: '1rem 1rem 0 0'`**: Matches container's rounded corners
+
+## **When to Use This Pattern**
+
+### **Use `object-contain` When:**
+- ✅ Banner images (sponsor banners, event banners)
+- ✅ Hero images that must show complete content
+- ✅ Logo images that need full visibility
+- ✅ Images where cropping would hide important content
+- ✅ Images in cards or containers where aspect ratio matters
+
+### **Use `object-cover` When:**
+- ✅ Background images where cropping is acceptable
+- ✅ Thumbnail images where partial visibility is fine
+- ✅ Decorative images where content isn't critical
+- ✅ Images in fixed-size containers where filling space is priority
+
+## **Complete Example Pattern**
+
+```tsx
+{/* Image Container - Matching events page style */}
+<div className="relative w-full h-auto rounded-t-2xl overflow-hidden">
+  {imageUrl ? (
+    <Image
+      src={imageUrl}
+      alt="Image description"
+      width={800}
+      height={600}
+      className="w-full h-auto object-contain group-hover:scale-105 transition-transform duration-300"
+      style={{
+        backgroundColor: 'transparent',
+        borderRadius: '1rem 1rem 0 0'
+      }}
+    />
+  ) : (
+    <div
+      className="w-full h-80 flex items-center justify-center"
+      style={{
+        backgroundColor: 'transparent',
+        borderRadius: '1rem 1rem 0 0'
+      }}
+    >
+      <span className="text-gray-400 text-5xl">🏢</span>
+    </div>
+  )}
+</div>
+```
+
+## **Reference Implementations**
+
+### **Events Page Pattern**
+See [`src/app/events/page.tsx`](mdc:src/app/events/page.tsx) lines 771-783 for the canonical implementation:
+```tsx
+<div className="relative w-full h-auto rounded-t-2xl overflow-hidden">
+  {event.thumbnailUrl ? (
+    <Image
+      src={event.thumbnailUrl}
+      alt={event.title}
+      width={800}
+      height={600}
+      className="w-full h-auto object-contain group-hover:scale-105 transition-transform duration-300"
+      style={{
+        backgroundColor: 'transparent',
+        borderRadius: '1rem 1rem 0 0'
+      }}
+    />
+  ) : (
+    {/* Placeholder */}
+  )}
+</div>
+```
+
+### **Sponsor Images Pattern**
+See [`src/app/events/[id]/page.tsx`](mdc:src/app/events/[id]/page.tsx) lines 964-991 for sponsor banner images:
+```tsx
+<div className="relative w-full h-auto rounded-t-2xl overflow-hidden">
+  {displayImageUrl ? (
+    <Image
+      src={displayImageUrl}
+      alt={sponsor.name}
+      width={800}
+      height={600}
+      className="w-full h-auto object-contain group-hover:scale-105 transition-transform duration-300"
+      style={{
+        backgroundColor: 'transparent',
+        borderRadius: '1rem 1rem 0 0'
+      }}
+    />
+  ) : (
+    {/* Placeholder */}
+  )}
+</div>
+```
+
+### **OurSponsorsSection Pattern**
+See [`src/components/OurSponsorsSection.tsx`](mdc:src/components/OurSponsorsSection.tsx) lines 201-224 for sponsor section images.
+
+## **Common Anti-Patterns to Avoid**
+
+```tsx
+// ❌ DON'T: Use fixed height with object-cover
+<div className="relative w-full h-[448px] rounded-t-2xl overflow-hidden">
+  <Image
+    className="w-full h-full object-cover"
+    {/* This crops images */}
+  />
+</div>
+
+// ❌ DON'T: Use object-cover for images that must be fully visible
+<Image
+  className="w-full h-full object-cover"
+  {/* This will crop important content */}
+/>
+
+// ❌ DON'T: Mix fixed height container with object-contain
+<div className="relative w-full h-[448px]">
+  <Image
+    className="w-full h-auto object-contain"
+    {/* Container height conflicts with image sizing */}
+  />
+</div>
+```
+
+## **Troubleshooting**
+
+### **Image Still Getting Cropped?**
+1. Check container height: Must be `h-auto`, not fixed height (`h-[XXXpx]`)
+2. Check image class: Must use `object-contain`, not `object-cover`
+3. Check image dimensions: Use `w-full h-auto`, not `w-full h-full`
+4. Verify overflow: Container should have `overflow-hidden` for rounded corners
+
+### **Image Too Small?**
+- Ensure `width` and `height` props are set appropriately (e.g., `width={800} height={600}`)
+- Check if container has sufficient width (`w-full`)
+- Verify no conflicting CSS is overriding the styles
+
+### **Image Not Centered?**
+- Add `flex items-center justify-center` to container if needed
+- Use `object-position: center` in style if required
+
+## **Hero Section Mobile Layout — Aspect-Ratio Containment (March 2026)**
+
+The homepage hero section uses a 4-section split layout with images of **varying aspect ratios** (5:6 portrait, 5:2 landscape, 5:1 ultra-wide). On mobile, each requires a different containment strategy. The full technique is documented in the dedicated rule:
+
+**See [Hero Mobile Image Containment](mdc:.cursor/rules/hero_mobile_image_containment_aspect_ratio.mdc)** for:
+- The **aspect-ratio matching technique** (container ratio = image ratio + `object-contain` = zero crop, zero gaps)
+- Section-by-section CSS with rationale for each approach
+- Decision tree: when to use `aspect-ratio` vs `max-height` cap vs `object-cover`
+- Common pitfalls and lessons learned from iterative fixes
+- Desktop (768px+) strategy differences
+
+### **Quick Summary**
+
+| Section | Image Ratio | Mobile Technique | Container Key CSS |
+|---------|-------------|-----------------|-------------------|
+| 1 (Kerala) | 5:6 portrait | `object-contain` + `max-height: 22vh` + dark bg | `background: #1a0a2e` blends side bars |
+| 2 (Slideshow) | 5:2 landscape | `aspect-ratio: 5/2` + `object-contain` | Zero crop, zero gaps |
+| 3 (Mission) | 5:1 ultra-wide | `aspect-ratio: 5/1` + `object-contain` + text overlay | `position: absolute` text + gradient |
+
+---
+
+## **Featured Event Card Strip (Homepage) — Fill + Rounded Corners**
+
+**Use when:** Featured Events horizontal strip (`FeaturedEventsSection`) — wide promo banners must **fill** the image column with **no left/right letterboxing** and **rounded top/left corners** matching the card (`rounded-2xl`).
+
+**Reference implementation:** Align with **Upcoming Events** banner pattern (`UpcomingEventsSection` → `Link.block` → `event-card-banner-media--upcoming`).
+
+### **Problem**
+- Fixed `md:h-[200px]` on a **70%**-wide column + `object-contain` → very wide, short box (~4:1) → **side gaps** for landscape banners (e.g. Givebutter).
+- Rounded radius on inner media only — contained image did not reach edges → **square yellow corners** visible inside rounded card.
+
+### **Solution**
+
+**1. Parent wrapper clips corners (not inner image box alone)**
+
+```css
+.featured-event-card-media {
+  overflow: hidden;
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+  line-height: 0;
+}
+@media (min-width: 768px) {
+  .featured-event-card-media {
+    border-top-left-radius: 1rem;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 1rem;
+    border-bottom-right-radius: 0;
+  }
+}
+```
+
+Inner `.event-card-banner-media--featured-strip` uses `border-radius: 0` — parent clips.
+
+**2. Mobile: compact aspect-ratio frame; Desktop: fill entire media column**
+
+```css
+/* Mobile — shorter strip (~25% less than 5/3) */
+.event-card-banner-media--featured-strip {
+  aspect-ratio: 20 / 9;
+  width: 100%;
+  max-height: 11.25rem;
+  border-radius: 0;
+}
+
+@media (min-width: 768px) {
+  .featured-event-card-media {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    min-height: 0;
+  }
+  .featured-event-card-media > a {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+  }
+  .event-card-banner-media--featured-strip {
+    aspect-ratio: auto;
+    max-height: none;
+    min-height: 100%;
+    height: 100%;
+    width: 100%;
+  }
+}
+
+.event-card-banner-media--featured-strip .event-card-banner-image,
+.event-card-banner-media--featured-strip img {
+  object-fit: cover !important;
+  object-position: top center !important;
+}
+```
+
+- **Mobile:** `aspect-ratio: 20/9` + `max-height` keeps cards compact.
+- **Desktop:** Row uses `md:items-stretch`; media column + link + strip use **`height: 100%`** (no fixed `aspect-ratio` / `max-height` on desktop) so the image **spans the full left panel**.
+- **`object-cover`** + **`top center`** fills edge-to-edge (no side letterboxing); crops bottom if needed — same intent as live event strip.
+- Override global `object-fit: contain` with `!important` for featured strip only.
+- **`EventStripBannerImage`**: `variant="featured"` must include `h-full w-full` on the media wrapper.
+
+**3. Remove fixed row height** — no `md:h-[200px]` on card; mobile aspect-ratio drives height; desktop height follows details column stretch.
+
+**4. Component structure**
+
+```tsx
+<div className="featured-event-card group overflow-hidden rounded-2xl ...">
+  <div className="featured-event-card-inner flex flex-col md:flex-row md:items-stretch">
+    <div className="featured-event-card-media relative w-full shrink-0 md:w-[70%]">
+      <Link href={`/events/${id}`} className="block h-full w-full min-h-0">
+        <EventStripBannerImage src={...} variant="featured" />
+      </Link>
+      {/* absolute: featured pill, buy-ticket overlay */}
+    </div>
+    <div className="featured-event-card-details ...">...</div>
+  </div>
+</div>
+```
+
+**5. `EventStripBannerImage`** — `variant="featured"` → `event-card-banner-media--featured-strip h-full w-full`; Next/Image `fill` + `event-card-banner-image`; `group-hover:scale-105` on featured.
+
+### **Files**
+- [`src/app/globals.css`](mdc:src/app/globals.css) — `.event-card-banner-media--featured-strip`, `.featured-event-card-media`
+- [`src/components/FeaturedEventsSection.tsx`](mdc:src/components/FeaturedEventsSection.tsx)
+- [`src/components/EventStripBannerImage.tsx`](mdc:src/components/EventStripBannerImage.tsx)
+
+### **When to use contain vs cover**
+
+| Context | Fit | Why |
+|--------|-----|-----|
+| Event thumbnails, sponsors, heroes (must show full art) | `object-contain` | Zero crop |
+| Featured homepage **promo strip** (fill column, no side gaps) | `object-cover` in clipped parent | Full bleed + rounded corners |
+
+### **Troubleshooting: Image cut off in middle / doesn't fill left column (desktop)**
+
+**Symptom:** Featured banner shows only a horizontal band or empty space above/below; image does not span full height of the left media column.
+
+**Root cause:** Desktop `.event-card-banner-media--featured-strip` used fixed `aspect-ratio` + `max-height` while `.featured-event-card-inner` uses `md:items-stretch` — details column sets row height but the banner box stayed a short fixed box.
+
+**Fix checklist:**
+- [ ] Desktop: `aspect-ratio: auto`, `max-height: none`, `height: 100%`, `min-height: 100%` on `--featured-strip`
+- [ ] Desktop: `.featured-event-card-media` is `display: flex`, link is `height: 100%`, `min-height: 0`
+- [ ] `EventStripBannerImage` featured variant includes `h-full w-full`
+- [ ] Link: `block h-full w-full min-h-0`
+- [ ] `object-fit: cover !important` + `object-position: top center !important`
+- [ ] Parent `.featured-event-card-media` has `overflow: hidden` + border-radius (inner strip `border-radius: 0`)
+- [ ] Do **not** re-add desktop `max-height` or fixed `aspect-ratio` on featured strip when row uses `items-stretch`
+
+---
+
+## **Related Patterns**
+
+- See [MOSC Redesign Hub Card Rounded Containment](mdc:.cursor/rules/image_mosc_redesign_hub_card_rounded_containment.mdc) for `/mosc-redesign/*` hub tiles (`MoscHubCardMedia` — intrinsic portrait vs landscape cover)
+- See [Hero Mobile Image Containment](mdc:.cursor/rules/hero_mobile_image_containment_aspect_ratio.mdc) for the complete mobile technique
+- See [MOSC Styling Standards](mdc:.cursor/rules/mosc_styling_standards.mdc) for overall design system
+- See [`src/app/events/page.tsx`](mdc:src/app/events/page.tsx) for reference implementation
+- See [`src/components/OurSponsorsSection.tsx`](mdc:src/components/OurSponsorsSection.tsx) for sponsor image pattern
+
+## **Summary Checklist**
+
+Before submitting images that must not be cropped:
+- [ ] Container uses `h-auto` (not fixed height)
+- [ ] Image uses `object-contain` (not `object-cover`)
+- [ ] Image uses `w-full h-auto` (not `w-full h-full`)
+- [ ] Container has `overflow-hidden` for rounded corners
+- [ ] Image has `backgroundColor: 'transparent'` in style
+- [ ] Image has matching `borderRadius` in style
+- [ ] Placeholder div matches image container styling
+
+**Hero section mobile** (see [dedicated rule](mdc:.cursor/rules/hero_mobile_image_containment_aspect_ratio.mdc)):
+- [ ] Section 1: `object-contain` + `max-height: 22vh` + `background: #1a0a2e` (portrait → side gaps blend with dark bg)
+- [ ] Section 2: `aspect-ratio: 5/2` + `object-contain` (landscape → ratio match = zero crop)
+- [ ] Section 3: `aspect-ratio: 5/1` + `object-contain` + `position: absolute` text overlay (ultra-wide → ratio match + gradient text)
+- [ ] All sections: `background: #1a0a2e` on containers, no `min-height`, no decorative styles

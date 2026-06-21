@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CDP-only laundry order driver.
+"""CDP-only laundry order driver (Microsoft Edge or any Chromium on port 9222).
 
 Opens a new tab pinned by ID, drives it via WebSocket Runtime.evaluate.
 No Selenium, no Playwright, no browser-use. Just stdlib + websocket-client.

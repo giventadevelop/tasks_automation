@@ -511,23 +511,23 @@
                     That wrapper delegates to <code class="script-name">laundry_flow.sh</code> in your Laundry TryCents project directory.
                 </li>
                 <li>
-                    The flow checks whether Chrome on Windows is reachable at <code class="code-highlight">localhost:9222</code> (Chrome DevTools Protocol).
+                    The flow checks whether <strong>Microsoft Edge</strong> on Windows is reachable at <code class="code-highlight">localhost:9222</code> (Chrome DevTools Protocol).
                     <ul>
                         <li>If <strong>yes</strong> → the script uses the existing browser.</li>
-                        <li>If <strong>no</strong> → it launches <code class="script-name">start_chrome_cdp.bat</code> via <code class="code-highlight">cmd.exe</code>, then waits up to <strong>30 seconds</strong> for CDP to become available.</li>
+                        <li>If <strong>no</strong> → it launches <code class="script-name">start_edge_cdp.bat</code> via <code class="code-highlight">cmd.exe</code>, then waits up to <strong>30 seconds</strong> for CDP to become available.</li>
                     </ul>
                 </li>
                 <li>
                     The Python CDP driver runs the order flow end-to-end and <strong>stops on the Order Summary page</strong> (checkout review), so you can verify line items before submitting.
                 </li>
                 <li>
-                    You <strong>manually click Submit</strong> in your Chrome window when you are satisfied with the order.
+                    You <strong>manually click Submit</strong> in your Edge window when you are satisfied with the order.
                 </li>
             </ol>
             <div class="info">
                 <strong>Implementation note:</strong>
                 <code class="script-name">laundry_flow.sh</code> probes <code class="code-highlight">$CDP_URL/json/version</code> (default <code class="code-highlight">http://localhost:9222</code>),
-                starts Windows Chrome if needed, then runs <code class="script-name">_cdp_driver.py</code>. See the project <code class="script-name">README.md</code> for file roles and environment variables.
+                starts Windows Edge if needed, then runs <code class="script-name">_cdp_driver.py</code>. See the project <code class="script-name">README.md</code> for file roles and environment variables.
             </div>
         </div>
 
@@ -535,7 +535,7 @@
         <div class="warning">
             <strong>Machine must be awake and unlocked</strong>
             <p>
-                At 5:00 PM Mondays your Windows machine must be <strong>awake and unlocked</strong>. If it is asleep or hibernating, the job fails because Chrome cannot render the UI reliably.
+                At 5:00 PM Mondays your Windows machine must be <strong>awake and unlocked</strong>. If it is asleep or hibernating, the job fails because Edge cannot render the UI reliably.
             </p>
             <p><strong>Mitigations:</strong></p>
             <ul>
@@ -551,10 +551,13 @@
             </p>
         </div>
         <div class="warning">
-            <strong>Chrome profile conflicts</strong>
+            <strong>Edge profile conflicts</strong>
             <p>
-                Chrome already running with a <strong>different</strong> <code class="code-highlight">--user-data-dir</code> can conflict with the CDP instance.
-                The cleanest approach is to keep the CDP Chrome profile (for example <code class="code-highlight">C:\chrome-cdp</code>) in a <strong>separate window</strong> from your daily browsing profile.
+                Edge already running with a <strong>different</strong> <code class="code-highlight">--user-data-dir</code> can conflict with the CDP instance.
+                The cleanest approach is to keep the CDP Edge profile (<code class="code-highlight">C:\edge-cdp-laundry</code>) in a <strong>separate window</strong> from your daily browsing profile.
+            </p>
+            <p>
+                WhatsApp poll automation uses <code class="code-highlight">C:\edge-cdp</code> on the same port — only one can run at a time. Quit the other browser before starting laundry.
             </p>
         </div>
 
@@ -695,7 +698,7 @@
                     To confirm the full chain (Hermes wrapper → <code class="script-name">laundry_flow.sh</code> → CDP → driver) works end-to-end,
                     run <code class="code-highlight">hermes cron run 08adc372e6ae</code> from WSL or ask your assistant to run the laundry job now.
                 </p>
-                <p class="tight-bottom">Watch Chrome for the Order Summary step and submit only when the order looks correct.</p>
+                <p class="tight-bottom">Watch Edge for the Order Summary step and submit only when the order looks correct.</p>
             </div>
         </div>
     </main>

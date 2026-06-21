@@ -1,0 +1,96 @@
+---
+description: Strapi category/article slug contract for Next.js news and directory consumers
+globs: src/lib/strapi/**/*.ts, src/app/**/news/**/*.ts, documentation/strapi/strapi_frontend_slug_contract.md
+alwaysApply: false
+---
+
+# Strapi Frontend Slug Contract
+
+## **Overview**
+
+Strapi normalizes UID `slug` fields to **lowercase kebab-case** on save. The Next.js app must use **canonical slug strings** in API filters and **unchanged** `article.slug` values in routes. Full reference: [strapi_frontend_slug_contract.md](mdc:documentation/strapi/strapi_frontend_slug_contract.md).
+
+For populate, `publishedAt`, tenant scoping, and media extraction, see [strapi_5_api_patterns.mdc](mdc:.cursor/rules/strapi_5_api_patterns.mdc).
+
+## **Canonical category slugs**
+
+Import from [`src/lib/strapi/newsCategorySlugs.ts`](mdc:src/lib/strapi/newsCategorySlugs.ts) — do not hardcode slug strings in fetchers.
+
+| Section | Constant | API value |
+|---------|----------|-----------|
+| Main News | `STRAPI_NEWS_CATEGORY_SLUGS.mainNews` | `main-news` |
+| Featured News | `STRAPI_NEWS_CATEGORY_SLUGS.featuredNews` | `featured-news` |
+| Press Release | `STRAPI_NEWS_CATEGORY_SLUGS.pressRelease` | `press-release` |
+| Most Read | `STRAPI_NEWS_CATEGORY_SLUGS.mostRead` | `most-read` |
+
+Admin display names (`Main News`) are **not** API slugs.
+
+## **Category filter in article queries**
+
+### **DO: Use shared helper with `$eq` (production)**
+
+```typescript
+import {
+  STRAPI_NEWS_CATEGORY_SLUGS,
+  buildCategorySlugFilter,
+} from '@/lib/strapi/newsCategorySlugs';
+
+buildArticleQuery(
+  buildCategorySlugFilter(STRAPI_NEWS_CATEGORY_SLUGS.mainNews),
+  'publishedAt:desc',
+  10,
+  tenantFilter
+);
+```
+
+### **DO: Use `$eqi` only for legacy mixed-case data**
+
+```typescript
+buildCategorySlugFilter(STRAPI_NEWS_CATEGORY_SLUGS.mainNews, { caseInsensitive: true });
+```
+
+### **DON'T**
+
+```typescript
+// ❌ DON'T: Invent casing or match display names
+'filters[category][slug][$eq]=Main-News'
+
+// ❌ DON'T: Duplicate slug literals across files
+'filters[category][slug][$eqi]=main-news'
+
+// ❌ DON'T: Re-slug article URLs on read
+`/news/${article.slug.toLowerCase().replace(/ /g, '-')}`
+```
+
+## **Article routes and links**
+
+- **DO:** Use `article.slug` from the API as returned in hrefs (e.g. `/mosc-redesign/news/${slug}`).
+- **DON'T:** Uppercase, trim-case, or kebab-normalize slugs when **reading** API data.
+- **Optional:** Use `toKebabSlug()` from `newsCategorySlugs.ts` only when **POSTing** content to Strapi.
+
+## **Required query parts (news lists)**
+
+Always combine category filters with:
+
+- `filters[tenant][tenantId][$eq]=<NEXT_PUBLIC_TENANT_ID>` (and optional `documentId` OR — see news fetcher)
+- `filters[publishedAt][$notNull]=true`
+- Array-style populate — see [strapi_5_api_patterns.mdc](mdc:.cursor/rules/strapi_5_api_patterns.mdc)
+
+## **Directory and other content types**
+
+Bishops, parishes, dioceses, etc. use the same kebab-case rule: `filters[slug][$eq]=...` with slug values from API responses.
+
+## **Checklist (news integration)**
+
+- [ ] Category fetches use `STRAPI_NEWS_CATEGORY_SLUGS` + `buildCategorySlugFilter`
+- [ ] Default operator is `$eq` after Strapi slug backfill on Cloud
+- [ ] Article detail links use API `slug` unchanged
+- [ ] Tenant + published filters on every article list
+- [ ] Section anchor IDs (`#main-news`) are UI-only; they are not Strapi filter values
+
+## **References**
+
+- Contract doc: [documentation/strapi/strapi_frontend_slug_contract.md](mdc:documentation/strapi/strapi_frontend_slug_contract.md)
+- Constants: [`src/lib/strapi/newsCategorySlugs.ts`](mdc:src/lib/strapi/newsCategorySlugs.ts)
+- News data: [`src/app/mosc-redesign/(syro)/news/getNewsHomePageData.ts`](mdc:src/app/mosc-redesign/(syro)/news/getNewsHomePageData.ts)
+- Strapi API mechanics: [strapi_5_api_patterns.mdc](mdc:.cursor/rules/strapi_5_api_patterns.mdc)

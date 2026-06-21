@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""WhatsApp Web poll automation via CDP-attached Chrome.
+"""WhatsApp Web poll automation via CDP-attached Chromium browser (Edge or Chrome).
 
 Strategy mirrors Laundry_TryCents/_cdp_driver.py:
-  * Attaches to a Chrome already running with --remote-debugging-port=9222
+  * Attaches to Edge/Chrome already running with --remote-debugging-port=9222
   * Finds (or opens) the web.whatsapp.com tab and drives it via WebSocket
+  * Clicks Log in on the landing page if the profile is not yet authenticated
   * No Selenium / Playwright / browser-use — stdlib + websocket-client only
 
 Safety: defaults to DRY-RUN (fills the poll but does NOT click Send).
@@ -11,10 +12,15 @@ Safety: defaults to DRY-RUN (fills the poll but does NOT click Send).
 
 Env vars:
   CDP_URL    default http://localhost:9222
-  CONTACT    default "Joseph"
+  CONTACT    default "Volleyball Friday"
   POLL_TITLE override the question text
+  CANCEL_MSG / TEMP_CANCEL_MSG  cancellation texts for rain / temperature
+  LOW_TURNOUT_MSG               not-enough-players cancellation text
+  MIN_PLAYERS                   minimum Yes votes (default 6)
+  ACTION                        poll (default) | check_turnout | send_low_turnout_cancel
   SEND       "1" to actually click Send; anything else = dry run
   TRACE      "1" dumps DOM snapshots on failure (helpful first time)
+  SKIP_WEATHER  "1" skips the weather pre-check entirely
 """
 import json
 import os
@@ -36,26 +42,56 @@ DEFAULT_TITLE = (
 DEFAULT_CANCEL_MSG = (
     "🌧️ Rainy day — volleyball cancelled this Friday. We'll regroup next week."
 )
+DEFAULT_TEMP_CANCEL_MSG = (
+    "🌡️ Temperature outside playable range (65–92°F) — "
+    "volleyball cancelled this Friday. We'll regroup next week."
+)
+DEFAULT_LOW_TURNOUT_MSG = (
+    "Today's volleyball game CANCELED : Not enough people\n\n"
+    "Hey folks, today's volleyball game at the park's off—doesn't look like we've got "
+    "enough people. No worries, we'll aim for next week. Catch you then!"
+)
 POLL_TITLE = os.environ.get("POLL_TITLE", DEFAULT_TITLE)
 CANCEL_MSG = os.environ.get("CANCEL_MSG", DEFAULT_CANCEL_MSG)
+TEMP_CANCEL_MSG = os.environ.get("TEMP_CANCEL_MSG", DEFAULT_TEMP_CANCEL_MSG)
+LOW_TURNOUT_MSG = os.environ.get("LOW_TURNOUT_MSG", DEFAULT_LOW_TURNOUT_MSG)
+MIN_PLAYERS = int(os.environ.get("MIN_PLAYERS", "6"))
+ACTION = os.environ.get("ACTION", "poll").strip().lower()
 POLL_OPTIONS = ["Yes", "No"]
 SEND = os.environ.get("SEND", "") == "1"
 TRACE = os.environ.get("TRACE", "") == "1"
 
 
 # Default contact (used when env var is unset OR empty).
-DEFAULT_CONTACT = "Gain Joseph"
+DEFAULT_CONTACT = "Volleyball Friday"
 CONTACT = os.environ.get("CONTACT", "").strip() or DEFAULT_CONTACT
 
 
 # ---- Weather pre-check ----------------------------------------------------
 # Location: Lake Hiawatha Park, NJ (≈4 Volunteers Court, Lake Hiawatha 07034)
-# Coords are hardcoded (zip 07034 → ~40.881, -74.387). Adjust if needed.
+WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "Lake Hiawatha, NJ")
 WEATHER_LAT = float(os.environ.get("WEATHER_LAT", "40.881"))
 WEATHER_LON = float(os.environ.get("WEATHER_LON", "-74.387"))
-# Window we care about (tomorrow, local time): 4 PM – 8:30 PM
+# NWS reports a nearest city name (often Boonton for this grid); coords are the real location check
+WEATHER_LOCATION_KEYWORDS = tuple(
+    k.strip().lower()
+    for k in os.environ.get(
+        "WEATHER_LOCATION_KEYWORDS",
+        "lake hiawatha,hiawatha,parsippany,boonton,montville,troy hills",
+    ).split(",")
+    if k.strip()
+)
+# Volleyball season: May 12 through October 30 (inclusive), local calendar dates
+SEASON_START_MONTH = int(os.environ.get("SEASON_START_MONTH", "5"))
+SEASON_START_DAY = int(os.environ.get("SEASON_START_DAY", "12"))
+SEASON_END_MONTH = int(os.environ.get("SEASON_END_MONTH", "10"))
+SEASON_END_DAY = int(os.environ.get("SEASON_END_DAY", "30"))
+# Window we care about (tomorrow, local time): 4 PM – 8 PM
 WEATHER_WINDOW_START_HOUR = int(os.environ.get("WEATHER_START_HOUR", "16"))
-WEATHER_WINDOW_END_HOUR = int(os.environ.get("WEATHER_END_HOUR", "20"))  # rounded up: covers hour 19→20 (8 PM)
+WEATHER_WINDOW_END_HOUR = int(os.environ.get("WEATHER_END_HOUR", "20"))
+# Playable temperature range (°F) during the game window
+TEMP_MIN_F = int(os.environ.get("TEMP_MIN_F", "65"))
+TEMP_MAX_F = int(os.environ.get("TEMP_MAX_F", "92"))
 # Rain decision thresholds
 RAIN_KEYWORDS = ("rain", "shower", "thunderstorm", "storm", "drizzle")
 RAIN_POP_THRESHOLD = int(os.environ.get("RAIN_POP_THRESHOLD", "50"))  # %
@@ -64,7 +100,11 @@ SKIP_WEATHER = os.environ.get("SKIP_WEATHER", "") == "1"
 
 
 def log(msg: str) -> None:
-    print(f"[wapoll] {msg}", flush=True)
+    out = f"[wapoll] {msg}"
+    try:
+        print(out, flush=True)
+    except UnicodeEncodeError:
+        print(out.encode("ascii", errors="replace").decode("ascii"), flush=True)
 
 
 def fail(msg: str) -> None:
@@ -92,23 +132,82 @@ def _nws_get(url: str, timeout: float = 15) -> dict:
         return json.loads(r.read())
 
 
-def weather_check_tomorrow() -> tuple[bool, str]:
-    """Return (is_rainy, human_message).
+def _in_volleyball_season(d: "datetime.date") -> bool:
+    import datetime as _dt
 
-    is_rainy=True means: in tomorrow's window 16:00–20:00 local, at least one
-    hour has either (a) probability-of-precipitation >= RAIN_POP_THRESHOLD or
-    (b) a shortForecast mentioning rain/showers/storms.
+    start = _dt.date(d.year, SEASON_START_MONTH, SEASON_START_DAY)
+    end = _dt.date(d.year, SEASON_END_MONTH, SEASON_END_DAY)
+    return start <= d <= end
+
+
+def _location_matches_nws(points: dict) -> tuple[bool, str]:
+    """Return (ok, resolved_label) for the NWS grid point.
+
+    Lake Hiawatha is identified by WEATHER_LAT/WEATHER_LON. NWS only supplies a
+    nearest city label (commonly Boonton or Parsippany for this grid).
+    """
+    rel = (points.get("properties") or {}).get("relativeLocation") or {}
+    city = ((rel.get("properties") or {}).get("city") or "").strip()
+    state = ((rel.get("properties") or {}).get("state") or "").strip()
+    label = f"{city}, {state}".strip(", ")
+    if state and state.upper() != "NJ":
+        return False, label
+    if city:
+        city_l = city.lower()
+        if not any(kw in city_l for kw in WEATHER_LOCATION_KEYWORDS):
+            log(
+                f"weather: NWS nearest city is {label!r}; "
+                f"using forecast for {WEATHER_LOCATION} at ({WEATHER_LAT},{WEATHER_LON})"
+            )
+    return True, label or WEATHER_LOCATION
+
+
+def weather_check_tomorrow() -> tuple[str, str, str]:
+    """Return (decision, human_message, cancel_reason).
+
+    decision is one of:
+      'proceed' — send the poll
+      'cancel'  — send a cancellation message (cancel_reason: 'rain' or 'temp')
+      'skip'    — outside May 12–Oct 30 season; send nothing
+
+    Checks only run for Lake Hiawatha, NJ coords and tomorrow's date in season.
+    Within season, cancel when rain is expected OR any hour in 4–8 PM is outside
+    TEMP_MIN_F..TEMP_MAX_F.
     """
     import datetime as _dt
 
-    log(f"weather: fetching forecast for ({WEATHER_LAT},{WEATHER_LON})")
+    tomorrow = (_dt.datetime.now().astimezone() + _dt.timedelta(days=1)).date()
+
+    if not _in_volleyball_season(tomorrow):
+        return (
+            "skip",
+            (
+                f"weather: tomorrow {tomorrow.isoformat()} is outside volleyball season "
+                f"({SEASON_START_MONTH:02d}/{SEASON_START_DAY:02d}–"
+                f"{SEASON_END_MONTH:02d}/{SEASON_END_DAY:02d}) — no poll or cancel message"
+            ),
+            "",
+        )
+
+    log(
+        f"weather: fetching forecast for {WEATHER_LOCATION} "
+        f"({WEATHER_LAT},{WEATHER_LON})"
+    )
     points = _nws_get(f"https://api.weather.gov/points/{WEATHER_LAT},{WEATHER_LON}")
+    loc_ok, nws_label = _location_matches_nws(points)
+    if not loc_ok:
+        return (
+            "skip",
+            (
+                f"weather: NWS grid point resolved to {nws_label!r}, "
+                f"expected area near {WEATHER_LOCATION} — skipping"
+            ),
+            "",
+        )
+
     forecast_url = points["properties"]["forecastHourly"]
     forecast = _nws_get(forecast_url)
     periods = forecast["properties"]["periods"]
-
-    # NWS startTime is ISO-8601 with timezone offset → use it directly.
-    tomorrow = (_dt.datetime.now().astimezone() + _dt.timedelta(days=1)).date()
 
     relevant = []
     for p in periods:
@@ -119,32 +218,74 @@ def weather_check_tomorrow() -> tuple[bool, str]:
             continue
         pop = (p.get("probabilityOfPrecipitation") or {}).get("value") or 0
         fc = p.get("shortForecast", "")
+        temp = p.get("temperature")
+        temp_unit = (p.get("temperatureUnit") or "F").upper()
+        if temp is not None and temp_unit != "F":
+            temp = int(round(temp * 9 / 5 + 32))
         rainy = pop >= RAIN_POP_THRESHOLD or any(k in fc.lower() for k in RAIN_KEYWORDS)
+        temp_ok = temp is not None and TEMP_MIN_F <= temp <= TEMP_MAX_F
         relevant.append({
             "hour": st.strftime("%I:%M %p").lstrip("0"),
             "pop": pop,
+            "temp": temp,
             "forecast": fc,
             "rainy": rainy,
+            "temp_ok": temp_ok,
         })
 
     if not relevant:
-        # NWS sometimes only has ~7 days; if we ran very late at night, tomorrow
-        # may have rolled over. Treat as non-rainy but warn.
-        return False, "weather: no forecast data for tomorrow's window — proceeding"
+        return (
+            "proceed",
+            "weather: no forecast data for tomorrow's window — proceeding",
+            "",
+        )
 
     rainy_hours = [r for r in relevant if r["rainy"]]
-    lines = [f"  {r['hour']}: {r['pop']}% — {r['forecast']}" for r in relevant]
+    bad_temp_hours = [r for r in relevant if r["temp"] is not None and not r["temp_ok"]]
+    lines = [
+        f"  {r['hour']}: {r['pop']}%"
+        + (f", {r['temp']}°F" if r["temp"] is not None else "")
+        + f" — {r['forecast']}"
+        for r in relevant
+    ]
     summary = (
-        f"weather check for tomorrow {tomorrow.isoformat()} "
+        f"weather check for {WEATHER_LOCATION} ({nws_label}), "
+        f"tomorrow {tomorrow.isoformat()} "
         f"{WEATHER_WINDOW_START_HOUR:02d}:00–{WEATHER_WINDOW_END_HOUR:02d}:00 local:\n"
         + "\n".join(lines)
     )
+
     if rainy_hours:
-        return True, summary + (
-            f"\n→ RAIN expected ({len(rainy_hours)} of {len(relevant)} hours flagged). "
-            "Meeting will be cancelled."
+        return (
+            "cancel",
+            summary + (
+                f"\n→ RAIN expected ({len(rainy_hours)} of {len(relevant)} hours flagged). "
+                "Meeting will be cancelled."
+            ),
+            "rain",
         )
-    return False, summary + "\n→ no rain expected — clear to send poll."
+
+    if bad_temp_hours:
+        temps = [r["temp"] for r in bad_temp_hours if r["temp"] is not None]
+        return (
+            "cancel",
+            summary + (
+                f"\n→ Temperature outside {TEMP_MIN_F}–{TEMP_MAX_F}°F "
+                f"({len(bad_temp_hours)} of {len(relevant)} hours flagged"
+                + (f"; range {min(temps)}–{max(temps)}°F" if temps else "")
+                + "). Meeting will be cancelled."
+            ),
+            "temp",
+        )
+
+    return (
+        "proceed",
+        summary + (
+            f"\n→ no rain expected and temps within {TEMP_MIN_F}–{TEMP_MAX_F}°F "
+            "— clear to send poll."
+        ),
+        "",
+    )
 
 
 def list_tabs() -> list:
@@ -155,13 +296,33 @@ def open_tab(url: str) -> dict:
     return json.loads(_http("PUT", f"/json/new?{url}"))
 
 
+def activate_tab(tab_id: str) -> None:
+    """Bring the CDP target tab to the foreground in Edge/Chrome."""
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(f"{CDP_URL}/json/activate/{tab_id}", method="GET"),
+            timeout=5,
+        )
+    except Exception as exc:
+        log(f"tab activate: {exc}")
+
+
 def find_or_open_whatsapp() -> dict:
     for t in list_tabs():
         if "web.whatsapp.com" in t.get("url", ""):
             log(f"found existing WhatsApp tab {t['id'][:8]}  {t['url']}")
+            activate_tab(t["id"])
+            time.sleep(0.5)
+            # Re-list so webSocketDebuggerUrl is fresh (avoids stale CDP connections).
+            for fresh in list_tabs():
+                if fresh.get("id") == t["id"]:
+                    return fresh
             return t
     log("no WhatsApp tab — opening new one")
-    return open_tab("https://web.whatsapp.com/")
+    tab = open_tab("https://web.whatsapp.com/")
+    activate_tab(tab["id"])
+    time.sleep(0.5)
+    return tab
 
 
 class Tab:
@@ -171,6 +332,21 @@ class Tab:
         self.ws_url = ws_url
         self.ws = websocket.create_connection(ws_url, timeout=30)
         self._id = 0
+        try:
+            self._call("Page.bringToFront", timeout=5)
+        except Exception:
+            pass
+
+    def _recv_json(self, deadline: float) -> dict | None:
+        """Read one CDP message; return None on socket timeout."""
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return None
+        self.ws.settimeout(max(0.05, remaining))
+        try:
+            return json.loads(self.ws.recv())
+        except websocket.WebSocketTimeoutException:
+            return None
 
     def _call(self, method: str, params: dict | None = None, timeout: float = 15):
         self._id += 1
@@ -178,7 +354,9 @@ class Tab:
         self.ws.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
         deadline = time.time() + timeout
         while time.time() < deadline:
-            r = json.loads(self.ws.recv())
+            r = self._recv_json(deadline)
+            if r is None:
+                continue
             if r.get("id") == mid:
                 if "error" in r:
                     raise RuntimeError(r["error"])
@@ -359,6 +537,52 @@ class Tab:
 # When WhatsApp Web changes, update these here.
 
 S_CHAT_LIST = "document.querySelector('div[role=\"grid\"][aria-label*=\"Chat\"], #pane-side')"
+S_LOGGED_IN = (
+    "const side=document.querySelector("
+    "'#pane-side, #side, [data-testid=\"chat-list\"], [data-testid=\"chatlist-panel\"]'"
+    ");"
+    "if(!side) return false;"
+    "const search=[...document.querySelectorAll("
+    "'input, [role=\"textbox\"], div[contenteditable=\"true\"]'"
+    ")].find(e=>{"
+    "  const al=(e.getAttribute('aria-label')||'').toLowerCase();"
+    "  return al.includes('search') || e.getAttribute('data-tab')==='3';"
+    "});"
+    "const rows=side.querySelectorAll("
+    "'[role=\"listitem\"], [role=\"row\"], [data-testid=\"cell-frame-container\"], div[role=\"gridcell\"]'"
+    ");"
+    "return rows.length>0 || !!search;"
+)
+S_WHATSAPP_STATE = (
+    "if(document.querySelector("
+    "'#pane-side [role=\"listitem\"], #pane-side [role=\"row\"], "
+    "[data-testid=\"chat-list\"] [role=\"row\"], [data-testid=\"cell-frame-container\"]'"
+    ")) return 'ready';"
+    "if(document.querySelector("
+    "'canvas[aria-label], [data-testid=\"qrcode\"], "
+    "[data-testid=\"link-device-qrcode\"]'"
+    ")) return 'qr';"
+    "if(document.querySelector("
+    "'[data-testid=\"landing-wrapper\"], [data-testid=\"intro-md-beta-logo-light\"], "
+    "[data-asset-intro-image-light]'"
+    ")) return 'landing';"
+    "if(document.querySelector('#pane-side, #side, #app')) return 'loading';"
+    "return 'unknown';"
+)
+S_LOGIN_BUTTON = (
+    "(()=>{"
+    "const vis=e=>e&&e.offsetParent!==null;"
+    "const cands=[...document.querySelectorAll('a, button, div[role=\"button\"]')]"
+    ".filter(vis);"
+    "return cands.find(e=>/log in with phone|log in|link with phone/i.test("
+    "(e.innerText||'').trim())) || null;"
+    "})()"
+)
+S_LANDING_PAGE = (
+    "document.querySelector('[data-testid=\"landing-wrapper\"], "
+    "[data-testid=\"intro-md-beta-logo-light\"], "
+    "[data-asset-intro-image-light]')"
+)
 # ---- Chat-list search locator ---------------------------------------------
 # WhatsApp Web changes the search field shape every few months. Rather than
 # chase one selector, we try several strategies in priority order. Each
@@ -507,6 +731,217 @@ S_MESSAGE_SEND_BUTTON = (
     "document.querySelector('#main button[aria-label=\"Send\"], #main [aria-label=\"Send\"]')"
 )
 
+# Read the latest volleyball poll in the open chat and parse Yes/No vote counts.
+S_LATEST_POLL_VOTES = (
+    "(()=>{"
+    "const main=document.querySelector('#main');"
+    "if(!main) return {found:false,error:'no_main'};"
+    "const scrollers=[...main.querySelectorAll("
+    "'div.copyable-area [tabindex=\"-1\"], [data-testid=\"conversation-panel-body\"]'"
+    ")];"
+    "scrollers.forEach(s=>{s.scrollTop=s.scrollHeight;});"
+    "const rows=[...main.querySelectorAll("
+    "'div[data-id], [data-testid=\"msg-container\"], div.message-in, div.message-out'"
+    ")];"
+    "const needles=['volleyball','shall we play'];"
+    "function parseVotes(msg){"
+    "  const txt=(msg.innerText||'');"
+    "  const lower=txt.toLowerCase();"
+    "  if(!needles.some(n=>lower.includes(n))) return null;"
+    "  if(!/\\byes\\b/i.test(txt)||!/\\bno\\b/i.test(txt)) return null;"
+    "  let yesVotes=null,noVotes=null;"
+    "  const lines=txt.split('\\n').map(l=>l.trim()).filter(Boolean);"
+    "  for(let j=0;j<lines.length;j++){"
+    "    if(/^yes$/i.test(lines[j])){"
+    "      for(let k=j+1;k<Math.min(j+5,lines.length);k++){"
+    "        const m=lines[k].match(/(\\d+)\\s*(?:vote|votes)?/i)||lines[k].match(/^(\\d+)$/);"
+    "        if(m){yesVotes=parseInt(m[1],10);break;}"
+    "      }"
+    "    }"
+    "    if(/^no$/i.test(lines[j])){"
+    "      for(let k=j+1;k<Math.min(j+5,lines.length);k++){"
+    "        const m=lines[k].match(/(\\d+)\\s*(?:vote|votes)?/i)||lines[k].match(/^(\\d+)$/);"
+    "        if(m){noVotes=parseInt(m[1],10);break;}"
+    "      }"
+    "    }"
+    "  }"
+    "  const els=[...msg.querySelectorAll('[aria-label],[role=\"button\"],button,span')]"
+    "  .filter(e=>e.offsetParent!==null);"
+    "  for(const el of els){"
+    "    const label=(el.getAttribute('aria-label')||el.innerText||'').trim();"
+    "    const vm=label.match(/(\\d+)\\s*(?:vote|votes)/i);"
+    "    if(!vm) continue;"
+    "    const v=parseInt(vm[1],10);"
+    "    if(/\\byes\\b/i.test(label)) yesVotes=v;"
+    "    else if(/\\bno\\b/i.test(label)) noVotes=v;"
+    "  }"
+    "  if(yesVotes===null&&noVotes===null){"
+    "    const nums=[...txt.matchAll(/(\\d+)\\s*(?:vote|votes)/gi)].map(m=>parseInt(m[1],10));"
+    "    if(nums.length>=2){yesVotes=nums[0];noVotes=nums[1];}"
+    "    else if(nums.length===1) yesVotes=nums[0];"
+    "  }"
+    "  if(yesVotes===null&&noVotes===null) return null;"
+    "  return {"
+    "    found:true,"
+    "    yesVotes:yesVotes??0,"
+    "    noVotes:noVotes??0,"
+    "    preview:txt.slice(0,240).replace(/\\s+/g,' ').trim()"
+    "  };"
+    "}"
+    "for(let i=rows.length-1;i>=0;i--){"
+    "  const parsed=parseVotes(rows[i]);"
+    "  if(parsed) return parsed;"
+    "}"
+    "return {found:false,error:'no_poll_found'};"
+    "})()"
+)
+
+
+def scroll_chat_to_bottom(tab: Tab) -> None:
+    try:
+        tab.eval(
+            "const main=document.querySelector('#main');"
+            "if(!main) return false;"
+            "const scrollers=[...main.querySelectorAll("
+            "'div.copyable-area [tabindex=\"-1\"], [data-testid=\"conversation-panel-body\"]'"
+            ")];"
+            "scrollers.forEach(s=>{s.scrollTop=s.scrollHeight;});"
+            "return true;"
+        )
+        time.sleep(1.0)
+    except Exception as exc:
+        log(f"scroll chat: {exc}")
+
+
+def read_latest_poll_votes(tab: Tab) -> dict:
+    """Return {found, yesVotes, noVotes, preview, error?} from the open chat."""
+    scroll_chat_to_bottom(tab)
+    for attempt in range(3):
+        try:
+            data = tab.eval(f"return ({S_LATEST_POLL_VOTES});", timeout=20)
+            if isinstance(data, dict):
+                return data
+        except Exception as exc:
+            log(f"poll read attempt {attempt + 1}: {exc}")
+        time.sleep(1.0)
+    return {"found": False, "error": "read_failed"}
+
+
+def run_turnout_check(tab: Tab) -> int:
+    """Read latest poll; send LOW_TURNOUT_MSG if Yes votes < MIN_PLAYERS."""
+    info = read_latest_poll_votes(tab)
+    if not info.get("found"):
+        fail(f"could not find a volleyball poll in chat: {info.get('error', 'unknown')}")
+
+    yes_votes = int(info.get("yesVotes") or 0)
+    no_votes = int(info.get("noVotes") or 0)
+    preview = info.get("preview") or ""
+    log(f"latest poll: Yes={yes_votes}  No={no_votes}  (need>={MIN_PLAYERS} Yes)")
+    if preview:
+        log(f"poll preview: {preview[:120]}...")
+
+    if yes_votes >= MIN_PLAYERS:
+        log(f"enough players ({yes_votes} Yes) — no cancellation message needed")
+        return 0
+
+    log(
+        f"NOT ENOUGH PLAYERS ({yes_votes} Yes, need {MIN_PLAYERS}) "
+        "— sending low-turnout cancellation"
+    )
+    send_text_message(tab, LOW_TURNOUT_MSG)
+    return 0
+
+
+def run_send_low_turnout_cancel(tab: Tab) -> int:
+    """Send the low-turnout cancellation message without reading the poll."""
+    log("sending low-turnout cancellation message (manual / forced)")
+    send_text_message(tab, LOW_TURNOUT_MSG)
+    return 0
+
+
+def ensure_whatsapp_session(tab: Tab) -> None:
+    """Open web.whatsapp.com, click Log in if needed, wait until chat list loads."""
+    try:
+        tab._call("Page.bringToFront", timeout=5)
+    except Exception:
+        pass
+
+    url = tab.eval("return location.href;") or ""
+    if "web.whatsapp.com" not in url:
+        tab.eval("location.href='https://web.whatsapp.com/'; return true;")
+        time.sleep(2.0)
+        url = tab.eval("return location.href;") or ""
+    log(f"on: {url}")
+    log("checking WhatsApp login state… (watch the Edge window)")
+
+    deadline = time.time() + 120
+    login_clicked = False
+    reload_attempted = False
+    last_log = time.time()
+    while time.time() < deadline:
+        state = "unknown"
+        logged_in = False
+        try:
+            logged_in = bool(tab.eval(S_LOGGED_IN, timeout=8))
+        except Exception as exc:
+            log(f"login check: {exc}")
+        if logged_in:
+            log("WhatsApp Web session ready (chat list visible)")
+            return
+
+        try:
+            state = tab.eval(S_WHATSAPP_STATE, timeout=8) or "unknown"
+        except Exception as exc:
+            log(f"state check: {exc}")
+
+        if time.time() - last_log >= 5:
+            secs_left = int(deadline - time.time())
+            log(f"waiting for WhatsApp… state={state!r} ({secs_left}s left)")
+            if state == "qr":
+                log("→ Scan the QR code in the Edge window with your phone.")
+            elif state == "landing":
+                log("→ Click Log in / link with phone number in Edge if prompted.")
+            elif state == "loading":
+                log("→ WhatsApp is still loading or syncing chats.")
+            last_log = time.time()
+
+        if state == "loading" and not reload_attempted:
+            elapsed = 120 - int(deadline - time.time())
+            if elapsed > 25:
+                log("still loading — reloading WhatsApp tab once")
+                try:
+                    tab.eval("location.reload(); return true;")
+                except Exception as exc:
+                    log(f"reload failed: {exc}")
+                reload_attempted = True
+                time.sleep(4.0)
+                continue
+
+        if not login_clicked and state in ("landing", "unknown"):
+            try:
+                login_btn = tab.eval(f"return !!({S_LOGIN_BUTTON});")
+                if login_btn:
+                    log("not logged in — clicking Log in")
+                    tab.click(S_LOGIN_BUTTON, "Log in with phone number", timeout=8)
+                    login_clicked = True
+                    time.sleep(2.0)
+            except Exception as exc:
+                log(f"login click attempt: {exc}")
+
+        time.sleep(1.0)
+
+    if TRACE:
+        tab._dump_dom_summary("WhatsApp login timeout")
+    try:
+        state = tab.eval(S_WHATSAPP_STATE)
+        log(f"final WhatsApp state: {state!r}")
+    except Exception:
+        pass
+    fail(
+        "WhatsApp Web sidebar did not appear within 120s. "
+        "Open Edge, finish login at web.whatsapp.com (scan QR), wait for chats to load, then re-run."
+    )
+
 
 def open_contact_chat(tab):
     """Run the search → click → header-verify flow. Returns when chat is open."""
@@ -649,50 +1084,78 @@ def send_poll(tab) -> None:
 
 
 def main() -> int:
-    log(f"contact={CONTACT!r}  send={SEND}  trace={TRACE}")
+    log(f"contact={CONTACT!r}  send={SEND}  trace={TRACE}  action={ACTION!r}")
 
-    # Weather pre-check
-    cancelled = False
+    if ACTION in ("check_turnout", "send_low_turnout_cancel"):
+        try:
+            version = json.loads(_http("GET", "/json/version", timeout=3))
+            browser = version.get("Browser", "Chromium")
+            log(f"CDP connected: {browser}")
+        except Exception as exc:
+            fail(
+                f"Browser CDP unreachable at {CDP_URL}: {exc}\n"
+                "Run start_edge_cdp.bat first (or start_chrome_cdp.bat)."
+            )
+
+        tab_info = find_or_open_whatsapp()
+        tab = Tab(tab_info["webSocketDebuggerUrl"])
+        try:
+            ensure_whatsapp_session(tab)
+            open_contact_chat(tab)
+            if ACTION == "check_turnout":
+                return run_turnout_check(tab)
+            return run_send_low_turnout_cancel(tab)
+        finally:
+            tab.close()
+
+    weather_decision = "proceed"
+    cancel_reason = ""
     if SKIP_WEATHER:
         log("weather: SKIP_WEATHER=1 → skipping weather check")
     else:
         try:
-            rainy, msg = weather_check_tomorrow()
+            weather_decision, msg, cancel_reason = weather_check_tomorrow()
         except Exception as exc:
             log(f"weather: check failed ({exc}) — proceeding without it")
-            rainy = False
+            weather_decision = "proceed"
             msg = ""
         if msg:
             for line in msg.splitlines():
                 log(line)
-        cancelled = rainy
+
+    if weather_decision == "skip":
+        return 0
+
+    cancelled = weather_decision == "cancel"
+    cancel_msg = CANCEL_MSG if cancel_reason == "rain" else TEMP_CANCEL_MSG
 
     if cancelled:
         log("=" * 60)
-        log("RAINY DAY — will send cancellation message instead of poll.")
+        if cancel_reason == "temp":
+            log("TEMP OUT OF RANGE — will send cancellation message instead of poll.")
+        else:
+            log("RAINY DAY — will send cancellation message instead of poll.")
         log("=" * 60)
 
-    # CDP sanity
+    # CDP sanity (Edge or Chrome — any Chromium browser on port 9222)
     try:
-        _http("GET", "/json/version", timeout=3)
+        version = json.loads(_http("GET", "/json/version", timeout=3))
+        browser = version.get("Browser", "Chromium")
+        log(f"CDP connected: {browser}")
     except Exception as exc:
-        fail(f"Chrome CDP unreachable at {CDP_URL}: {exc}")
+        fail(
+            f"Browser CDP unreachable at {CDP_URL}: {exc}\n"
+            "Run start_edge_cdp.bat first (or start_chrome_cdp.bat)."
+        )
 
     tab_info = find_or_open_whatsapp()
     tab = Tab(tab_info["webSocketDebuggerUrl"])
     try:
-        url = tab.eval("return location.href;")
-        log(f"on: {url}")
-        tab.wait(
-            "!!document.querySelector('#pane-side, #side, [data-testid=\"chat-list\"]')",
-            "WhatsApp Web sidebar (logged in?)",
-            timeout=60,
-        )
-
+        ensure_whatsapp_session(tab)
         open_contact_chat(tab)
 
         if cancelled:
-            send_text_message(tab, CANCEL_MSG)
+            send_text_message(tab, cancel_msg)
         else:
             send_poll(tab)
 

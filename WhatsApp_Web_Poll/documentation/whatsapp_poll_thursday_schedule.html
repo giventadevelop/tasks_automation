@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="WhatsApp Web Poll Thursday schedule — Windows Task Scheduler, season gates, Edge CDP, and setup steps.">
+    <title>WhatsApp Web Poll — Thursday Scheduled Run</title>
+    <style>
+        body {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 0.3em;
+            margin-top: 0;
+        }
+
+        h2 {
+            font-size: 1.8em;
+            border-left: 4px solid #0066cc;
+            padding-left: 15px;
+            margin-top: 1.5em;
+        }
+
+        h3 {
+            font-size: 1.4em;
+            color: #333;
+        }
+
+        .toc {
+            background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+
+        .toc h2 {
+            margin-top: 0;
+            border: none;
+            padding-left: 0;
+        }
+
+        .toc ul {
+            margin: 0;
+            padding-left: 1.25em;
+        }
+
+        .toc a {
+            color: #0066cc;
+        }
+
+        .section-intro {
+            background: linear-gradient(135deg, #e8f4f8 0%, #d1e7f0 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+
+        .section-intro code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+        }
+
+        .section-container {
+            background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+            border-left: 4px solid #0066cc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+        }
+
+        .section-container.usage {
+            background: linear-gradient(135deg, #f0e6ff 0%, #e6ccff 100%);
+            border-left-color: #9c27b0;
+        }
+
+        .section-header {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+            padding: 12px 20px;
+            margin: -20px -20px 20px -20px;
+            border-radius: 8px 8px 0 0;
+            font-size: 1.2em;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-header.usage {
+            background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
+        }
+
+        .info {
+            background-color: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            padding: 15px 18px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .info code,
+        .warning code,
+        .success code,
+        .code-highlight {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+            font-family: 'Courier New', monospace;
+        }
+
+        .warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 18px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px 18px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .script-name {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+
+        .parameters-list {
+            background: linear-gradient(135deg, #fff5e6 0%, #ffe6cc 100%);
+            border-left: 4px solid #ff9800;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 15px 0;
+        }
+
+        .parameters-list strong {
+            color: #ff9800;
+            font-weight: bold;
+        }
+
+        .parameters-list code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            color: white;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 0.5px;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        tr:hover {
+            background-color: #e3f2fd;
+            transition: background-color 0.2s ease;
+        }
+
+        td code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+            font-family: 'Courier New', monospace;
+        }
+
+        code {
+            background-color: #e8f4f8;
+            color: #0d3b66;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #b8d4e3;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .command-block {
+            border: 2px solid;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .command-block.verify {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border-color: #4caf50;
+        }
+
+        .command-block.install {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-color: #2196f3;
+        }
+
+        .command-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.5);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .command-type {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .command-header-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .copy-button,
+        .copy-button-template {
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .copy-button {
+            background-color: #0066cc;
+            color: white;
+        }
+
+        .copy-button:hover {
+            background-color: #0052a3;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .copy-button.copied {
+            background-color: #28a745;
+        }
+
+        .copy-button-template {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .copy-button-template:hover {
+            background-color: #5a6268;
+        }
+
+        .copy-button-template.copied {
+            background-color: #28a745;
+        }
+
+        .command-content {
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            background: #fff;
+            color: #0d3b66;
+            word-break: break-all;
+        }
+
+        .command-single-line {
+            padding: 12px 15px;
+            background: #e8f4f8;
+            border-top: 1px solid #b8d4e3;
+        }
+
+        .command-single-line-label {
+            font-size: 0.75em;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .command-single-line code {
+            background: transparent;
+            border: none;
+            padding: 0;
+            color: #0d3b66;
+            font-size: 0.95em;
+        }
+
+        main ol li {
+            margin-bottom: 0.5em;
+        }
+
+        .flow-diagram {
+            background: #fff;
+            border: 1px solid #b8d4e3;
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #0d3b66;
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.5;
+        }
+
+        .tight-top { margin-top: 0; }
+        .tight-bottom { margin-bottom: 0; }
+
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            h1 { font-size: 1.75em; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>WhatsApp Web Poll — Thursday Scheduled Run</h1>
+
+        <div class="toc">
+            <h2>Table of Contents</h2>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#schedule-policy">Schedule policy (gates)</a></li>
+                <li><a href="#files">Files added for scheduling</a></li>
+                <li><a href="#one-time-setup">One-time setup</a></li>
+                <li><a href="#install-task">Install the Windows task</a></li>
+                <li><a href="#thursday-flow">What happens on Thursday</a></li>
+                <li><a href="#manual-vs-scheduled">Manual vs scheduled runs</a></li>
+                <li><a href="#commands">Useful commands</a></li>
+                <li><a href="#troubleshooting">Troubleshooting</a></li>
+                <li><a href="#env-vars">Environment variables</a></li>
+            </ul>
+        </div>
+
+        <div class="section-intro">
+            <p>
+                This page documents how the <strong>Thursday volleyball WhatsApp poll</strong> is scheduled on Windows
+                using <strong>Task Scheduler</strong> (not WSL, not browser-use, not Hermes). The poll runs
+                <strong>the day before Friday games</strong>, checks weather for Lake Hiawatha, NJ, and either sends
+                the poll or a cancellation message via <strong>Microsoft Edge + CDP</strong>.
+            </p>
+            <p class="tight-bottom">
+                Project folder: <code>WhatsApp_Web_Poll/</code> under your <code>tasks_automation</code> repo
+                (paths are relative to the <code>.bat</code> files — no hardcoded drive letters).
+            </p>
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <div class="section-container">
+            <div class="section-header">🏐 Purpose</div>
+            <p>
+                Every <strong>Thursday</strong> during volleyball season, the automation posts a WhatsApp poll asking
+                whether to play volleyball <strong>Friday 6:00 PM at Lake Hiawatha Park</strong>. If rain or temperature
+                is outside the playable range, it sends a cancellation text instead.
+            </p>
+            <div class="info">
+                <strong>Stack:</strong> Windows Python (<code>py -3</code>) + <code>websocket-client</code> +
+                Edge on <code>localhost:9222</code> (Chrome DevTools Protocol). No Selenium, Playwright, or browser-use.
+            </div>
+        </div>
+
+        <h2 id="schedule-policy">Schedule policy (gates)</h2>
+        <div class="section-container">
+            <div class="section-header">📅 When the scheduled runner actually fires</div>
+            <p>
+                Task Scheduler may trigger often (wake, unlock, weekly time), but
+                <code class="script-name">schedule_gate.py</code> enforces these rules before anything is sent:
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Gate</th>
+                        <th>Default</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Weekday</td>
+                        <td><strong>Thursday</strong> only</td>
+                        <td>Day before Friday game; <code>SCHEDULE_WEEKDAY=3</code> (Mon=0)</td>
+                    </tr>
+                    <tr>
+                        <td>Season</td>
+                        <td><strong>May 12 – Oct 30</strong></td>
+                        <td>Same as <code class="script-name">whatsapp_poll.py</code> volleyball season</td>
+                    </tr>
+                    <tr>
+                        <td>Run window</td>
+                        <td><strong>08:00 – 18:00</strong> local</td>
+                        <td>Poll asks for Friday noon confirmation — morning/afternoon Thursday is ideal</td>
+                    </tr>
+                    <tr>
+                        <td>Once per day</td>
+                        <td>Stamp file</td>
+                        <td><code>%LOCALAPPDATA%\tasks_automation\whatsapp_poll_last_run.txt</code></td>
+                    </tr>
+                </tbody>
+            </table>
+            <h3>Weather logic (inside <code class="script-name">whatsapp_poll.py</code>)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Check</th>
+                        <th>Default</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Location</td>
+                        <td>Lake Hiawatha, NJ (<code>40.881, -74.387</code>) — NWS may label grid as Boonton</td>
+                    </tr>
+                    <tr>
+                        <td>Forecast window</td>
+                        <td>Tomorrow <strong>4 PM – 8 PM</strong> (game time)</td>
+                    </tr>
+                    <tr>
+                        <td>Temperature</td>
+                        <td><strong>65 – 92 °F</strong> during that window</td>
+                    </tr>
+                    <tr>
+                        <td>Rain</td>
+                        <td>≥ 50% PoP or rain/storm keywords → cancel message</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="files">Files added for scheduling</h2>
+        <div class="section-container">
+            <div class="section-header">📁 New / updated scripts</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Role</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code class="script-name">schedule_gate.py</code></td>
+                        <td>Thursday / season / time / once-per-day checks</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code></td>
+                        <td>Non-interactive runner: gate → Edge CDP → poll (<code>SEND=1</code>, logs to <code>logs/</code>)</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">install_whatsapp_poll_task.bat</code></td>
+                        <td>One-click Task Scheduler install (calls PowerShell helper)</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">install_whatsapp_poll_task.ps1</code></td>
+                        <td>Creates UTF-16 task XML with multiple triggers</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">uninstall_whatsapp_poll_task.bat</code></td>
+                        <td>Removes the scheduled task</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">start_edge_cdp.bat</code></td>
+                        <td>Starts Edge with CDP on port 9222, profile <code>C:\edge-cdp</code></td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_poll.bat</code></td>
+                        <td>Interactive manual run (prompts for contact and dry-run)</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p><strong>Task name in Windows:</strong> <code>WhatsApp Volleyball Poll (Thursday)</code></p>
+        </div>
+
+        <h2 id="one-time-setup">One-time setup</h2>
+        <div class="section-container">
+            <div class="section-header">🔧 Before the first scheduled Thursday</div>
+            <ol>
+                <li>
+                    <strong>Close all Chrome and Edge</strong> (Task Manager → end <code>chrome.exe</code> / <code>msedge.exe</code>).
+                    Port 9222 must be used by Edge for this automation.
+                </li>
+                <li>
+                    Run <code class="script-name">start_edge_cdp.bat</code> — opens Edge with profile
+                    <code class="code-highlight">C:\edge-cdp</code> and navigates to
+                    <code class="code-highlight">https://web.whatsapp.com/</code>.
+                </li>
+                <li>
+                    <strong>Scan the QR code</strong> with your phone and wait until the <strong>chat list</strong> loads.
+                    This login persists in the Edge CDP profile.
+                </li>
+                <li>
+                    Ensure <strong>Python 3</strong> is on PATH (<code>py -3</code> or <code>python</code>).
+                    The scheduled runner auto-installs <code>websocket-client</code> if missing.
+                </li>
+            </ol>
+            <div class="warning">
+                <strong>Edge vs Chrome on port 9222</strong>
+                <p class="tight-top">
+                    If Chrome already owns port 9222, <code class="script-name">start_edge_cdp.bat</code> reports a warning and
+                    the poll may attach to the wrong browser. Fully quit Chrome before starting Edge CDP.
+                </p>
+            </div>
+        </div>
+
+        <h2 id="install-task">Install the Windows task</h2>
+        <div class="section-container usage">
+            <div class="section-header usage">⚙️ Task Scheduler triggers</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Trigger</th>
+                        <th>Behavior</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Weekly Thursday 08:00</td>
+                        <td><code>StartWhenAvailable</code> — if PC was off at 8 AM, runs when it comes on later that Thursday</td>
+                    </tr>
+                    <tr>
+                        <td>Resume from sleep</td>
+                        <td>System event: Power-Troubleshooter Event ID 1</td>
+                    </tr>
+                    <tr>
+                        <td>Session unlock</td>
+                        <td>When you unlock Windows (e.g. PC woke Thursday morning)</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>Double-click <code class="script-name">install_whatsapp_poll_task.bat</code> in the <code>WhatsApp_Web_Poll</code> folder.</p>
+            <div class="success">
+                <p class="tight-top"><strong>After install:</strong> logs appear under <code>WhatsApp_Web_Poll/logs/whatsapp_poll_YYYYMMDD.log</code>.</p>
+            </div>
+        </div>
+
+        <h2 id="thursday-flow">What happens on Thursday</h2>
+        <div class="section-container">
+            <div class="section-header">⚙️ End-to-end flow</div>
+            <div class="flow-diagram">Task Scheduler trigger (time / wake / unlock)
+        │
+        ▼
+run_whatsapp_poll_scheduled.bat
+        │
+        ├─► schedule_gate.py ──► skip? (wrong day / season / time / already ran) → exit 0, log only
+        │
+        ├─► start_edge_cdp.bat ──► Edge on localhost:9222 (C:\edge-cdp profile)
+        │
+        ├─► whatsapp_poll.py
+        │       ├─► weather_check_tomorrow() → rain/temp cancel OR send poll
+        │       ├─► ensure_whatsapp_session() → open web.whatsapp.com, wait for chat list
+        │       ├─► search contact "Volleyball Friday"
+        │       └─► send poll OR cancellation message (SEND=1)
+        │
+        └─► schedule_gate.py --mark  (only if exit code 0)</div>
+            <ol>
+                <li>Gate must pass (Thursday, in season, 08:00–18:00, not already sent today).</li>
+                <li>Edge CDP must be reachable; script starts Edge if needed.</li>
+                <li>Weather API checks tomorrow 4–8 PM at Lake Hiawatha; cancels on rain or temp outside 65–92 °F.</li>
+                <li>WhatsApp Web must be logged in in the <code>C:\edge-cdp</code> profile.</li>
+                <li>On success, stamp file prevents a second send the same day (wake + unlock + 8 AM won't duplicate).</li>
+            </ol>
+        </div>
+
+        <h2 id="manual-vs-scheduled">Manual vs scheduled runs</h2>
+        <div class="section-container">
+            <div class="section-header">🖱️ Two ways to run</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Script</th>
+                        <th>Interactive</th>
+                        <th>SEND</th>
+                        <th>Contact</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_poll.bat</code></td>
+                        <td>Yes — prompts</td>
+                        <td>You choose (Enter = send)</td>
+                        <td>You choose (default Volleyball Friday)</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code></td>
+                        <td>No</td>
+                        <td>Always <code>SEND=1</code></td>
+                        <td>Fixed <code>Volleyball Friday</code> — no prompts</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="commands">Useful commands</h2>
+        <div class="section-container usage">
+            <div class="section-header usage">📋 Windows CLI</div>
+            <p>Run from <code>WhatsApp_Web_Poll/</code> or use full paths. All lines below are copy-ready for cmd.exe.</p>
+
+            <div class="command-block install"
+                 data-template-command="install_whatsapp_poll_task.bat">
+                <div class="command-header">
+                    <span class="command-type">Install scheduled task (one time)</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-install')" title="Copy template">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-install')" title="Copy command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-content" id="cmd-install">install_whatsapp_poll_task.bat</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="cmd-install-single-code">install_whatsapp_poll_task.bat</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-template-command='schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"'>
+                <div class="command-header">
+                    <span class="command-type">Run task now (manual test)</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-run')" title="Copy template">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-run')" title="Copy command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-content" id="cmd-run">schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="cmd-run-single-code">schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-template-command='schtasks /query /tn "WhatsApp Volleyball Poll (Thursday)" /fo LIST /v'>
+                <div class="command-header">
+                    <span class="command-type">Verify task is registered</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-query')" title="Copy template">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-query')" title="Copy command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-content" id="cmd-query">schtasks /query /tn "WhatsApp Volleyball Poll (Thursday)" /fo LIST /v</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="cmd-query-single-code">schtasks /query /tn "WhatsApp Volleyball Poll (Thursday)" /fo LIST /v</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-template-command="uninstall_whatsapp_poll_task.bat">
+                <div class="command-header">
+                    <span class="command-type">Remove scheduled task</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-uninstall')" title="Copy template">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-uninstall')" title="Copy command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-content" id="cmd-uninstall">uninstall_whatsapp_poll_task.bat</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="cmd-uninstall-single-code">uninstall_whatsapp_poll_task.bat</code>
+                </div>
+            </div>
+
+            <div class="command-block verify"
+                 data-template-command="py -3 schedule_gate.py">
+                <div class="command-header">
+                    <span class="command-type">Test schedule gate only (no WhatsApp)</span>
+                    <div class="command-header-buttons">
+                        <button type="button" class="copy-button-template" onclick="copyTemplateCommand(this, 'cmd-gate')" title="Copy template">📄 Template</button>
+                        <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-gate')" title="Copy command">📋 Copy</button>
+                    </div>
+                </div>
+                <div class="command-content" id="cmd-gate">py -3 schedule_gate.py</div>
+                <div class="command-single-line">
+                    <div class="command-single-line-label">Windows single-line</div>
+                    <code id="cmd-gate-single-code">py -3 schedule_gate.py</code>
+                </div>
+            </div>
+        </div>
+
+        <h2 id="troubleshooting">Troubleshooting</h2>
+        <div class="warning">
+            <strong>Stuck after <code>on: https://web.whatsapp.com/</code></strong>
+            <p>WhatsApp is not logged in or still loading. Scan QR in the Edge <code>C:\edge-cdp</code> window; wait for chats. Re-run after login.</p>
+        </div>
+        <div class="warning">
+            <strong><code>Port 9222 is in use — may be Chrome</code></strong>
+            <p>Quit all Chrome instances. Run <code class="script-name">start_edge_cdp.bat</code> so Edge owns CDP.</p>
+        </div>
+        <div class="warning">
+            <strong>Scheduled run does nothing</strong>
+            <p>Check <code>logs/whatsapp_poll_*.log</code> for <code>skip:</code> lines (wrong weekday, outside season, outside 08–18, or already ran). Gate exits 0 on skip — that is normal.</p>
+        </div>
+        <div class="warning">
+            <strong>Machine asleep / locked</strong>
+            <p>Task runs in your interactive session. Unlock Windows after wake; the <strong>session unlock</strong> trigger covers late-morning wake-ups on Thursday.</p>
+        </div>
+        <div class="info">
+            <strong>Reset “already ran today”</strong>
+            <p class="tight-top">Delete <code>%LOCALAPPDATA%\tasks_automation\whatsapp_poll_last_run.txt</code> to allow another send the same day (testing only).</p>
+        </div>
+
+        <h2 id="env-vars">Environment variables</h2>
+        <div class="section-container">
+            <div class="section-header">🔧 Overrides</div>
+            <div class="parameters-list">
+                <p><strong>Schedule gate (<code class="script-name">schedule_gate.py</code>):</strong></p>
+                <ul>
+                    <li><code>SEASON_START_MONTH</code>, <code>SEASON_START_DAY</code>, <code>SEASON_END_MONTH</code>, <code>SEASON_END_DAY</code></li>
+                    <li><code>SCHEDULE_WEEKDAY</code> — default <code>3</code> (Thursday)</li>
+                    <li><code>SCHEDULE_START_HOUR</code>, <code>SCHEDULE_END_HOUR</code> — default 8 and 18</li>
+                    <li><code>WHATSAPP_POLL_STAMP</code> — path to once-per-day stamp file</li>
+                </ul>
+                <p><strong>Poll / weather (<code class="script-name">whatsapp_poll.py</code>):</strong></p>
+                <ul>
+                    <li><code>CONTACT</code>, <code>SEND</code>, <code>CANCEL_MSG</code>, <code>TEMP_CANCEL_MSG</code></li>
+                    <li><code>WEATHER_LAT</code>, <code>WEATHER_LON</code>, <code>TEMP_MIN_F</code>, <code>TEMP_MAX_F</code></li>
+                    <li><code>SKIP_WEATHER=1</code> — bypass weather check</li>
+                </ul>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function fallbackCopy(text, button, templateMode) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('aria-hidden', 'true');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+                button.classList.add('copied');
+                button.textContent = '✓ Copied!';
+                setTimeout(function () {
+                    button.classList.remove('copied');
+                    button.textContent = templateMode ? '📄 Template' : '📋 Copy';
+                }, 2000);
+            } catch (err) {
+                console.error('Copy failed', err);
+            }
+            document.body.removeChild(ta);
+        }
+
+        function copyCommand(button, commandId) {
+            const el = document.getElementById(commandId);
+            if (!el) return;
+            const text = el.textContent.trim();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function () {
+                    button.classList.add('copied');
+                    button.textContent = '✓ Copied!';
+                    setTimeout(function () {
+                        button.classList.remove('copied');
+                        button.textContent = '📋 Copy';
+                    }, 2000);
+                }).catch(function () {
+                    fallbackCopy(text, button, false);
+                });
+            } else {
+                fallbackCopy(text, button, false);
+            }
+        }
+
+        function copyTemplateCommand(button, commandId) {
+            const block = button.closest('.command-block');
+            if (!block) return;
+            let text = block.getAttribute('data-template-command') || '';
+            if (!text) {
+                const el = document.getElementById(commandId);
+                if (el) text = el.textContent.trim();
+            }
+            text = text.replace(/&quot;/g, '"');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function () {
+                    button.classList.add('copied');
+                    button.textContent = '✓ Copied!';
+                    setTimeout(function () {
+                        button.classList.remove('copied');
+                        button.textContent = '📄 Template';
+                    }, 2000);
+                }).catch(function () {
+                    fallbackCopy(text, button, true);
+                });
+            } else {
+                fallbackCopy(text, button, true);
+            }
+        }
+    </script>
+</body>
+</html>

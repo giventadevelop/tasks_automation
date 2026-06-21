@@ -475,7 +475,7 @@ def show_initial_dialog():
     screen_width = dialog.winfo_screenwidth()
     screen_height = dialog.winfo_screenheight()
     dialog_width = int(screen_width * 3/8)
-    dialog_height = int(screen_height * 1/2)  # bumped from 3/8 for the 2 extra buttons
+    dialog_height = int(screen_height * 0.62)  # room for task buttons including WhatsApp turnout
 
     # Custom title bar style
     title_frame = tk.Frame(dialog, bg='#2c3e50', height=40)
@@ -512,6 +512,14 @@ def show_initial_dialog():
 
     def on_laundry():
         result['choice'] = 'laundry'
+        dialog.destroy()
+
+    def on_whatsapp_poll():
+        result['choice'] = 'whatsapp_poll'
+        dialog.destroy()
+
+    def on_whatsapp_low_turnout():
+        result['choice'] = 'whatsapp_low_turnout'
         dialog.destroy()
 
     def on_youtube_transcribe():
@@ -555,6 +563,23 @@ def show_initial_dialog():
                            command=on_laundry, **button_style)
     laundry_btn.pack(pady=10)
 
+    whatsapp_poll_btn = tk.Button(content_frame, text="WhatsApp Poll",
+                                  bg='#128C7E', fg='white',
+                                  activebackground='#075E54',
+                                  command=on_whatsapp_poll, **button_style)
+    whatsapp_poll_btn.pack(pady=8)
+
+    whatsapp_turnout_btn = tk.Button(
+        content_frame,
+        text="Volleyball Low Turnout",
+        bg='#0B6E4F',
+        fg='white',
+        activebackground='#084C35',
+        command=on_whatsapp_low_turnout,
+        **button_style,
+    )
+    whatsapp_turnout_btn.pack(pady=8)
+
     youtube_btn = tk.Button(content_frame, text="YouTube Transcribe",
                            bg='#e67e22', fg='white',
                            activebackground='#d35400',
@@ -584,6 +609,226 @@ def show_initial_dialog():
     root.destroy()
 
     return result['choice']
+
+
+def launch_task_batch_in_console(bat_path, work_dir, extra_env=None):
+    """Start a .bat in a new console (Windows). extra_env values may be empty strings."""
+    import subprocess
+    env = os.environ.copy()
+    if extra_env:
+        for key, value in extra_env.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
+    if sys.platform != 'win32':
+        raise OSError('Console batch launch is supported on Windows only')
+    subprocess.Popen(
+        ['cmd.exe', '/c', 'start', '', 'cmd.exe', '/k', bat_path],
+        cwd=work_dir,
+        env=env,
+    )
+
+
+def get_whatsapp_poll_options():
+    """Dashboard prompts for manual WhatsApp poll. Returns (contact, send_real) or None."""
+    root = tk.Tk()
+    root.withdraw()
+    dialog = tk.Toplevel(root)
+    dialog.title("WhatsApp Poll")
+    dialog.configure(bg='#ecf0f1')
+    dialog.resizable(False, False)
+
+    frame = tk.Frame(dialog, bg='#ecf0f1', padx=20, pady=16)
+    frame.pack(fill='both', expand=True)
+
+    tk.Label(
+        frame,
+        text="WhatsApp poll — manual run",
+        bg='#ecf0f1',
+        font=('Helvetica', 12, 'bold'),
+    ).pack(anchor='w', pady=(0, 8))
+
+    tk.Label(
+        frame,
+        text="Contact / chat name to search:",
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+    ).pack(anchor='w')
+    contact_entry = tk.Entry(frame, width=42, font=('Helvetica', 11))
+    contact_entry.insert(0, 'Volleyball Friday')
+    contact_entry.pack(anchor='w', pady=(4, 12))
+
+    tk.Label(
+        frame,
+        text="Send mode:",
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+    ).pack(anchor='w')
+    send_mode = tk.StringVar(value='send')
+    modes = tk.Frame(frame, bg='#ecf0f1')
+    modes.pack(anchor='w', pady=(4, 12))
+    tk.Radiobutton(
+        modes, text='Send for real', variable=send_mode, value='send',
+        bg='#ecf0f1', font=('Helvetica', 10),
+    ).pack(anchor='w')
+    tk.Radiobutton(
+        modes, text='Dry-run (fill poll, do not click Send)', variable=send_mode, value='dry',
+        bg='#ecf0f1', font=('Helvetica', 10),
+    ).pack(anchor='w')
+
+    result = {'value': None}
+
+    def on_run():
+        contact = contact_entry.get().strip() or 'Volleyball Friday'
+        send_real = send_mode.get() == 'send'
+        result['value'] = (contact, send_real)
+        dialog.destroy()
+
+    def on_cancel():
+        dialog.destroy()
+
+    btn_row = tk.Frame(frame, bg='#ecf0f1')
+    btn_row.pack(pady=(8, 0))
+    tk.Button(
+        btn_row, text='Run', width=10, bg='#128C7E', fg='white',
+        command=on_run,
+    ).pack(side='left', padx=4)
+    tk.Button(btn_row, text='Cancel', width=10, command=on_cancel).pack(side='left', padx=4)
+
+    dialog.protocol('WM_DELETE_WINDOW', on_cancel)
+    dialog.update_idletasks()
+    w, h = dialog.winfo_width(), dialog.winfo_height()
+    sw, sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
+    dialog.geometry(f'+{(sw - w) // 2}+{(sh - h) // 2}')
+    dialog.grab_set()
+    dialog.wait_window()
+    root.destroy()
+    return result['value']
+
+
+def get_whatsapp_turnout_options():
+    """Dashboard prompts for low-turnout flow. Returns (mode, contact, send_real) or None.
+
+    mode: 'check' (read poll, cancel if Yes < 6) or 'send' (always send cancel message)
+    """
+    root = tk.Tk()
+    root.withdraw()
+    dialog = tk.Toplevel(root)
+    dialog.title("Volleyball Low Turnout")
+    dialog.configure(bg='#ecf0f1')
+    dialog.resizable(False, False)
+
+    frame = tk.Frame(dialog, bg='#ecf0f1', padx=20, pady=16)
+    frame.pack(fill='both', expand=True)
+
+    tk.Label(
+        frame,
+        text="Volleyball low turnout",
+        bg='#ecf0f1',
+        font=('Helvetica', 12, 'bold'),
+    ).pack(anchor='w', pady=(0, 8))
+
+    tk.Label(
+        frame,
+        text="Action:",
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+    ).pack(anchor='w')
+    action_mode = tk.StringVar(value='check')
+    modes = tk.Frame(frame, bg='#ecf0f1')
+    modes.pack(anchor='w', pady=(4, 12))
+    tk.Radiobutton(
+        modes,
+        text='Check latest poll — send cancel if fewer than 6 Yes votes',
+        variable=action_mode,
+        value='check',
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+        wraplength=420,
+        justify='left',
+    ).pack(anchor='w')
+    tk.Radiobutton(
+        modes,
+        text='Send cancel message now (skip poll read)',
+        variable=action_mode,
+        value='send',
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+        wraplength=420,
+        justify='left',
+    ).pack(anchor='w')
+
+    tk.Label(
+        frame,
+        text="Contact / group name:",
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+    ).pack(anchor='w')
+    contact_entry = tk.Entry(frame, width=42, font=('Helvetica', 11))
+    contact_entry.insert(0, 'Volleyball Friday')
+    contact_entry.pack(anchor='w', pady=(4, 12))
+
+    tk.Label(
+        frame,
+        text="Send mode:",
+        bg='#ecf0f1',
+        font=('Helvetica', 10),
+    ).pack(anchor='w')
+    send_mode = tk.StringVar(value='send')
+    send_row = tk.Frame(frame, bg='#ecf0f1')
+    send_row.pack(anchor='w', pady=(4, 12))
+    tk.Radiobutton(
+        send_row, text='Send for real', variable=send_mode, value='send',
+        bg='#ecf0f1', font=('Helvetica', 10),
+    ).pack(anchor='w')
+    tk.Radiobutton(
+        send_row, text='Dry-run (do not click Send)', variable=send_mode, value='dry',
+        bg='#ecf0f1', font=('Helvetica', 10),
+    ).pack(anchor='w')
+
+    result = {'value': None}
+
+    def on_run():
+        contact = contact_entry.get().strip() or 'Volleyball Friday'
+        send_real = send_mode.get() == 'send'
+        result['value'] = (action_mode.get(), contact, send_real)
+        dialog.destroy()
+
+    def on_cancel():
+        dialog.destroy()
+
+    btn_row = tk.Frame(frame, bg='#ecf0f1')
+    btn_row.pack(pady=(8, 0))
+    tk.Button(
+        btn_row, text='Run', width=10, bg='#0B6E4F', fg='white',
+        command=on_run,
+    ).pack(side='left', padx=4)
+    tk.Button(btn_row, text='Cancel', width=10, command=on_cancel).pack(side='left', padx=4)
+
+    dialog.protocol('WM_DELETE_WINDOW', on_cancel)
+    dialog.update_idletasks()
+    w, h = dialog.winfo_width(), dialog.winfo_height()
+    sw, sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
+    dialog.geometry(f'+{(sw - w) // 2}+{(sh - h) // 2}')
+    dialog.grab_set()
+    dialog.wait_window()
+    root.destroy()
+    return result['value']
+
+
+def confirm_laundry_launch():
+    """Dashboard confirmation before starting laundry flow."""
+    root = tk.Tk()
+    root.withdraw()
+    ok = messagebox.askyesno(
+        'Laundry',
+        'Start the TryCents laundry order flow in Microsoft Edge?\n\n'
+        'The automation stops at Order Summary — review the order and click Submit yourself.',
+    )
+    root.destroy()
+    return ok
+
 
 def get_contact_input():
     root = tk.Tk()
@@ -1713,7 +1958,6 @@ def main():
                     show_contact_url_dialog("Contact URL", f"View contact at:\n{contact_url}")
 
             elif choice == 'laundry':
-                import subprocess
                 tasks_root = resolved_tasks_automation_root()
                 laundry_path = os.path.join(tasks_root, 'Laundry_TryCents')
                 bat_path = os.path.join(laundry_path, 'run_laundry.bat')
@@ -1727,15 +1971,15 @@ def main():
                         "tasks_automation next to this .exe, then try again.",
                     )
                     continue
+                if not confirm_laundry_launch():
+                    continue
                 try:
                     if sys.platform == 'win32':
-                        subprocess.Popen(
-                            ['cmd.exe', '/c', 'start', '', 'cmd.exe', '/k', bat_path],
-                            cwd=laundry_path,
-                        )
+                        launch_task_batch_in_console(bat_path, laundry_path)
                     else:
                         laundry_main = os.path.join(laundry_path, 'laundry_automation.py')
                         if os.path.isfile(laundry_main):
+                            import subprocess
                             subprocess.Popen([sys.executable, laundry_main], cwd=laundry_path)
                         else:
                             messagebox.showerror("Error", f"No Windows .bat and no {laundry_main}")
@@ -1743,12 +1987,137 @@ def main():
                     logging.info("Launched Laundry via run_laundry.bat")
                     messagebox.showinfo(
                         "Laundry Automation",
-                        "Laundry has been started in a new console (run_laundry.bat).\n\n"
-                        "If nothing appears, verify TASKS_AUTOMATION_ROOT and that WSL/Chrome steps in the batch file succeed.",
+                        "Laundry started in a new console (run_laundry.bat).\n\n"
+                        "Watch Edge for the TryCents flow. Verify TASKS_AUTOMATION_ROOT if nothing appears.",
                     )
                 except Exception as e:
                     logging.error(f"Failed to start laundry automation: {e}")
                     messagebox.showerror("Error", f"Could not start laundry automation:\n{str(e)}")
+
+            elif choice == 'whatsapp_poll':
+                tasks_root = resolved_tasks_automation_root()
+                poll_path = os.path.join(tasks_root, 'WhatsApp_Web_Poll')
+                bat_path = os.path.join(poll_path, 'run_whatsapp_poll.bat')
+                if not os.path.isfile(bat_path):
+                    messagebox.showerror(
+                        "Error",
+                        "WhatsApp poll launcher not found:\n"
+                        f"{bat_path}\n\n"
+                        "Set environment variable TASKS_AUTOMATION_ROOT to your tasks_automation "
+                        "folder (the one that contains WhatsApp_Web_Poll), or place that checkout at "
+                        "tasks_automation next to this app, then try again.",
+                    )
+                    continue
+                poll_opts = get_whatsapp_poll_options()
+                if not poll_opts:
+                    continue
+                contact, send_real = poll_opts
+                try:
+                    if sys.platform == 'win32':
+                        launch_task_batch_in_console(
+                            bat_path,
+                            poll_path,
+                            extra_env={
+                                'SKIP_PROMPTS': '1',
+                                'CONTACT': contact,
+                                'SEND': '1' if send_real else '',
+                            },
+                        )
+                    else:
+                        poll_main = os.path.join(poll_path, 'whatsapp_poll.py')
+                        if os.path.isfile(poll_main):
+                            import subprocess
+                            env = os.environ.copy()
+                            env['CONTACT'] = contact
+                            env['SEND'] = '1' if send_real else ''
+                            subprocess.Popen([sys.executable, poll_main], cwd=poll_path, env=env)
+                        else:
+                            messagebox.showerror("Error", f"No Windows .bat and no {poll_main}")
+                            continue
+                    mode = 'real send' if send_real else 'dry-run'
+                    logging.info("Launched WhatsApp poll contact=%r mode=%s", contact, mode)
+                    messagebox.showinfo(
+                        "WhatsApp Poll",
+                        f"WhatsApp poll started in a new console.\n\n"
+                        f"Contact: {contact}\nMode: {mode}\n\n"
+                        "Ensure Edge is logged in at web.whatsapp.com (C:\\edge-cdp profile).",
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to start WhatsApp poll: {e}")
+                    messagebox.showerror("Error", f"Could not start WhatsApp poll:\n{str(e)}")
+
+            elif choice == 'whatsapp_low_turnout':
+                tasks_root = resolved_tasks_automation_root()
+                poll_path = os.path.join(tasks_root, 'WhatsApp_Web_Poll')
+                turnout_opts = get_whatsapp_turnout_options()
+                if not turnout_opts:
+                    continue
+                mode, contact, send_real = turnout_opts
+                bat_name = (
+                    'run_whatsapp_turnout_check.bat'
+                    if mode == 'check'
+                    else 'run_whatsapp_low_turnout_cancel.bat'
+                )
+                bat_path = os.path.join(poll_path, bat_name)
+                if not os.path.isfile(bat_path):
+                    messagebox.showerror(
+                        "Error",
+                        f"WhatsApp turnout launcher not found:\n{bat_path}",
+                    )
+                    continue
+                try:
+                    if sys.platform == 'win32':
+                        launch_task_batch_in_console(
+                            bat_path,
+                            poll_path,
+                            extra_env={
+                                'SKIP_PROMPTS': '1',
+                                'CONTACT': contact,
+                                'SEND': '1' if send_real else '',
+                                'MIN_PLAYERS': '6',
+                            },
+                        )
+                    else:
+                        poll_main = os.path.join(poll_path, 'whatsapp_poll.py')
+                        if os.path.isfile(poll_main):
+                            import subprocess
+                            env = os.environ.copy()
+                            env['CONTACT'] = contact
+                            env['SEND'] = '1' if send_real else ''
+                            env['MIN_PLAYERS'] = '6'
+                            env['ACTION'] = (
+                                'check_turnout' if mode == 'check'
+                                else 'send_low_turnout_cancel'
+                            )
+                            subprocess.Popen(
+                                [sys.executable, poll_main], cwd=poll_path, env=env,
+                            )
+                        else:
+                            messagebox.showerror("Error", f"No Windows .bat and no {poll_main}")
+                            continue
+                    action_label = (
+                        'check poll (cancel if < 6 Yes)'
+                        if mode == 'check'
+                        else 'send cancel message'
+                    )
+                    mode_label = 'real send' if send_real else 'dry-run'
+                    logging.info(
+                        "Launched WhatsApp turnout contact=%r action=%s mode=%s",
+                        contact, action_label, mode_label,
+                    )
+                    messagebox.showinfo(
+                        "Volleyball Low Turnout",
+                        f"Started in a new console.\n\n"
+                        f"Contact: {contact}\n"
+                        f"Action: {action_label}\n"
+                        f"Mode: {mode_label}\n\n"
+                        "Ensure Edge is logged in at web.whatsapp.com (C:\\edge-cdp profile).",
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to start WhatsApp turnout: {e}")
+                    messagebox.showerror(
+                        "Error", f"Could not start WhatsApp turnout flow:\n{str(e)}",
+                    )
 
             elif choice in ('youtube_transcribe', 'prune_transcripts'):
                 import subprocess

@@ -104,10 +104,29 @@ can wire that up later if you want it always-on.
 - **First load can be slow** (60s timeout for the sidebar to appear) if
   your WhatsApp Web hasn't finished syncing since last open.
 
-## Non-goals (v1)
+## Scheduled runs (every Thursday)
 
-- Hermes cron scheduling (can be added later — same wrapper pattern as
-  `~/.hermes/scripts/laundry_trycents_weekly.sh`).
+To run automatically on **Thursdays** in volleyball season (**May 12 – Oct 30**),
+between **08:00–18:00** local, including when the PC **wakes from sleep** or you
+**unlock** Windows that day:
+
+1. One-time: sign in to WhatsApp Web in Edge (`C:\edge-cdp` profile).
+2. Double-click **`install_whatsapp_poll_task.bat`** (creates a Windows Task Scheduler job).
+3. Logs go to `WhatsApp_Web_Poll/logs/`.
+
+The scheduled runner (`run_whatsapp_poll_scheduled.bat`) sends for real (`SEND=1`)
+to **Gain Joseph** with no prompts. It runs at most **once per day** (stamp file in
+`%LOCALAPPDATA%\tasks_automation\`).
+
+**Test:** `schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"`
+
+**Remove:** `uninstall_whatsapp_poll_task.bat`
+
+Override schedule window via env: `SCHEDULE_START_HOUR`, `SCHEDULE_END_HOUR`,
+`SEASON_START_MONTH`, etc. (same names as `schedule_gate.py`).
+
+## Non-goals
+
 - Mobile-app automation.
 - WhatsApp Business API.
 - Group chats (works for 1:1 only; group selectors differ).

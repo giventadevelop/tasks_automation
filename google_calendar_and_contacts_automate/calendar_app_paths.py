@@ -52,7 +52,7 @@ def property_files_locations_hint():
 
 def tasks_automation_root_candidates():
     """
-    Directory that contains Laundry_TryCents and YouTube_Transcribe (repo root: tasks_automation).
+    Directory that contains Laundry_TryCents, WhatsApp_Web_Poll, YouTube_Transcribe (repo root: tasks_automation).
     When frozen, does not use sys._MEIPASS — those tools live outside the onefile bundle.
     """
     if not getattr(sys, 'frozen', False):
@@ -64,7 +64,8 @@ def tasks_automation_root_candidates():
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
     yield os.path.join(exe_dir, 'tasks_automation')
     if os.name == 'nt':
-        # Common checkout on this machine; override with TASKS_AUTOMATION_ROOT for portability.
+        # Common checkout paths — override with TASKS_AUTOMATION_ROOT for portability.
+        yield r'F:\project_workspace\tasks_automation'
         yield r'C:\E_Drive\project_workspace\tasks_automation'
 
 

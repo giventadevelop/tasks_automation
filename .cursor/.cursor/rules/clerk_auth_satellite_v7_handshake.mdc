@@ -1,0 +1,225 @@
+---
+description: Clerk v7+ satellite-domain authentication on Next.js App Router — URL handshake flow, when NOT to enable frontendApiProxy, correct sign-in/sign-up redirect helpers, and FORCE_REDIRECT_URL pitfalls. Applies to apps where one Clerk instance serves a primary domain plus one or more satellite domains (e.g. event-site-manager.com + mosc-temp.com).
+globs: src/middleware.ts, src/app/(auth)/sign-in/[[...sign-in]]/page.tsx, src/app/(auth)/sign-up/[[...sign-up]]/page.tsx, src/app/layout.tsx, .env.production
+alwaysApply: true
+---
+
+# Clerk v7 Satellite-Domain Authentication
+
+## **Overview**
+
+This rule documents the **correct way** to wire a Clerk satellite domain in `@clerk/nextjs` v7+ and the **specific failure modes** that occurred during the v6 → v7 migration. The TL;DR:
+
+- Use **URL handshake flow**, not the FAPI proxy.
+- Use `clerk.redirectToSignIn()` / `redirectToSignUp()`, **never** a hand-rolled `?redirect_url=` redirect.
+- Never set `*_FORCE_REDIRECT_URL` env vars to the sign-in/sign-up page URLs themselves.
+
+If you violate any of these, the satellite SDK silently loads with `userId: null` and `__client_uat=0`, and no avatar/admin menu appears on the satellite.
+
+---
+
+## **Background: v6 vs v7 Satellite Behavior**
+
+- **v6** (`@clerk/nextjs` ^6.x): satellite session establishment was **lenient** — the SDK would synthesize a session from cross-domain FAPI calls even when the return URL had no `__clerk_handshake` token. Hand-rolled `?redirect_url=` redirects happened to work *by accident*.
+- **v7** (`@clerk/nextjs` ^7.0.0+): satellite session establishment is **strict** — the satellite SDK establishes a session **only** when a `__clerk_handshake=<token>` parameter is present in the return URL. Any redirect flow that doesn't generate this token leaves the satellite permanently logged out.
+
+When upgrading from v6 → v7, audit every place that constructs a primary-domain sign-in URL by hand.
+
+---
+
+## **Rule 1: Use `clerk.redirectToSignIn()` / `redirectToSignUp()` on the satellite — never hand-roll the URL**
+
+The satellite's `/sign-in` and `/sign-up` pages must detect the satellite hostname and call Clerk's redirect helpers. The helpers read `isSatellite` / `domain` / `signInUrl` from ClerkProvider and add `__clerk_satellite_url` to the primary's URL — which is what triggers Clerk to generate a `__clerk_handshake` token on the return trip.
+
+```typescript
+// ✅ DO — satellite sign-in page
+'use client';
+import { useClerk } from '@clerk/nextjs';
+
+export default function SignInPage() {
+  const clerk = useClerk();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isSatellite = window.location.hostname.includes('mosc-temp.com');
+    if (isSatellite) {
+      // Clerk builds: https://<primary>/sign-in?__clerk_satellite_url=<satellite>&...
+      // Primary returns: https://<satellite>/?__clerk_handshake=<token>&__clerk_synced=true
+      clerk.redirectToSignIn({ redirectUrl: window.location.origin });
+    }
+  }, [clerk]);
+  // ...
+}
+```
+
+```typescript
+// ❌ DON'T — hand-rolled redirect; bypasses Clerk's satellite logic
+const signInUrl = `https://${primaryHost}/sign-in?redirect_url=${encodeURIComponent(currentUrl)}`;
+window.location.href = signInUrl;
+// Result on v7: primary signs the user in, redirects back to satellite as a
+// plain navigation with no __clerk_handshake token. Satellite stays signed out.
+```
+
+Same pattern for sign-up — use `clerk.redirectToSignUp({ redirectUrl: window.location.origin })`.
+
+Reference: [src/app/(auth)/sign-in/[[...sign-in]]/page.tsx](mdc:src/app/(auth)/sign-in/[[...sign-in]]/page.tsx), [src/app/(auth)/sign-up/[[...sign-up]]/page.tsx](mdc:src/app/(auth)/sign-up/[[...sign-up]]/page.tsx).
+
+---
+
+## **Rule 2: Do NOT enable `frontendApiProxy` in middleware unless the proxy URL is registered in Clerk Dashboard FIRST**
+
+`frontendApiProxy` in `clerkMiddleware` makes the middleware intercept `/__clerk/*` and forward to Clerk's FAPI with `Clerk-Proxy-Url` and `Clerk-Secret-Key` headers. Clerk's FAPI then checks: *"is this proxy URL registered to the instance whose secret key was sent?"*.
+
+If the proxy URL is **not** registered, FAPI returns `400 host_invalid` for every request — and **all satellite handshake attempts fail** because v7 routes the handshake through the proxy when one is configured.
+
+### Chicken-and-egg problem
+Clerk Dashboard validates the proxy URL by probing it before saving the registration. The probe forwards to FAPI, which returns `host_invalid` because the URL isn't yet registered. You cannot break out of this loop without Clerk support manually whitelisting the proxy URL.
+
+```typescript
+// ❌ DON'T enable the proxy unless Clerk has it on file
+export default clerkMiddleware(handler, {
+  ...satConfig,
+  frontendApiProxy: { enabled: true },  // breaks satellite if not registered
+});
+
+export const config = {
+  matcher: [
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|...)).*)',
+    '/(api|trpc|__clerk)(.*)',  // ❌ __clerk in matcher requires proxy registration
+  ],
+};
+```
+
+```typescript
+// ✅ DO — exclude __clerk from the matcher, let the URL-handshake flow handle satellite
+export default clerkMiddleware(handler, {
+  ...satConfig,
+  // No frontendApiProxy — rely on URL handshake (browser redirect with token)
+  signInUrl: isSatEnv
+    ? `https://${primaryDomain}/sign-in`
+    : '/sign-in',
+});
+
+export const config = {
+  matcher: [
+    '/((?!_next|__clerk|[^?]*\\.(?:html?|css|js(?!on)|...)).*)',  // ✅ __clerk excluded
+    '/(api|trpc)(.*)',
+  ],
+};
+```
+
+If you later decide you genuinely need the proxy (e.g., for first-party cookies in a browser that blocks third-party cookies entirely), the **prerequisite** is:
+
+1. Contact Clerk support to manually register `https://<satellite>/__clerk` against your instance.
+2. *Then* enable `frontendApiProxy: { enabled: isSatEnv }`.
+3. *Then* re-include `__clerk` in the matcher.
+
+Doing this in the wrong order breaks satellite auth in production.
+
+Reference: [src/middleware.ts](mdc:src/middleware.ts).
+
+---
+
+## **Rule 3: `*_FORCE_REDIRECT_URL` env vars must NEVER point at the sign-in/sign-up page itself**
+
+These env vars are passed as URL parameters by `clerk.redirectToSignIn()` / `redirectToSignUp()`:
+
+- `NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL` → `sign_in_force_redirect_url=` in URL
+- `NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL` → `sign_up_force_redirect_url=` in URL
+
+They tell Clerk's `<SignIn>` / `<SignUp>` components: *"after a successful sign-in/up, force-redirect to this URL"*. If the URL points back at the sign-in/sign-up page, Clerk detects the loop and refuses to render the form — the page is blank.
+
+```bash
+# ❌ DON'T — points sign-in's after-redirect at sign-in itself; <SignIn /> renders blank
+NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=https://www.event-site-manager.com/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL=https://www.event-site-manager.com/sign-up
+```
+
+```bash
+# ✅ DO — either remove these vars entirely (recommended) or point them at a
+# post-login destination. The redirectToSignIn({ redirectUrl: window.location.origin })
+# call already supplies the satellite return URL via redirect_url=…, so these
+# FORCE vars are usually redundant.
+
+# Recommended: omit them; let Clerk use defaults
+# Or, if needed:
+# NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=https://www.example.com/
+# NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL=https://www.example.com/profile
+```
+
+Apply this to **both** primary and satellite `.env.production` files and to the corresponding AWS Amplify environment variables.
+
+---
+
+## **Rule 4: The satellite `ClerkProvider` config must include `isSatellite`, `domain`, and a primary `signInUrl`**
+
+The satellite branch of `clerkProps` in `src/app/layout.tsx` must carry exactly these fields. Without `isSatellite: true`, the SDK won't trigger the satellite handshake at all.
+
+```typescript
+// ✅ DO — satellite ClerkProvider config (apply on the satellite host only)
+clerkProps = isSatellite
+  ? {
+      isSatellite: true,
+      domain: satelliteDomain,                 // e.g. 'www.mosc-temp.com'
+      signInUrl: `https://${primaryDomain}/sign-in`,
+      signUpUrl: `https://${primaryDomain}/sign-up`,
+      afterSignOutUrl: '/',
+    }
+  : {
+      allowedRedirectOrigins: appUrl ? [appUrl] : [],
+      afterSignOutUrl: '/',
+    };
+```
+
+The `domain` must match what's registered in **Clerk Dashboard → Domains → Satellites**. If you serve both bare (`example.com`) and `www.example.com`, either:
+
+- Register **both** as satellite domains in Clerk Dashboard, **or**
+- Configure a 301 redirect from bare → www at the hosting layer (Amplify/CloudFront/Route 53) so only the registered hostname ever serves traffic.
+
+Mismatch between actual hostname and the registered satellite causes `host_invalid` on every handshake.
+
+Reference: [src/app/layout.tsx](mdc:src/app/layout.tsx).
+
+---
+
+## **Symptom → Cause → Fix Table**
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| Satellite SDK loads, `[Header] Auth state: {isLoaded: true, userId: null}`, `__client_uat=0` cookie, no `__clerk_handshake` in URL during sign-in flow | Sign-in page uses hand-rolled `?redirect_url=…` instead of `clerk.redirectToSignIn()` | Apply Rule 1 |
+| Browser shows raw JSON `{"code":"host_invalid"}` from `https://<satellite>/__clerk/v1/client/handshake?…` | `frontendApiProxy` enabled in middleware but proxy URL not registered in Clerk Dashboard | Apply Rule 2 (disable proxy, exclude `__clerk` from matcher) |
+| Primary sign-in page renders heading only, `<SignIn />` form never appears, URL contains `sign_in_force_redirect_url=https://<primary>/sign-in` | `*_FORCE_REDIRECT_URL` env var points at the sign-in page itself; Clerk detects loop | Apply Rule 3 |
+| `host_invalid` even though Dashboard shows satellite as Verified | Hostname mismatch — site served on bare `example.com` while Dashboard has `www.example.com` registered | Apply Rule 4 (redirect bare→www, or register both) |
+
+---
+
+## **The Working Flow End-to-End (reference)**
+
+When all four rules are followed, a user logged in on primary visiting the satellite for the first time should see:
+
+1. Satellite page renders (no session yet, but pages are public).
+2. User clicks Sign In → `<Link href="/sign-in">` navigates to satellite's `/sign-in`.
+3. Satellite sign-in page detects satellite hostname → calls `clerk.redirectToSignIn({ redirectUrl: window.location.origin })`.
+4. Browser navigates to:
+   ```
+   https://<primary>/sign-in?
+     __clerk_satellite_url=https%3A%2F%2F<satellite>
+     &redirect_url=https%3A%2F%2F<satellite>%2F
+   ```
+5. Primary's `<SignIn />` detects existing session, completes sign-in, redirects to:
+   ```
+   https://<satellite>/?__clerk_handshake=<token>&__clerk_synced=true
+   ```
+6. Satellite SDK reads the token from URL, sets first-party `__session` and updates `__client_uat` to a non-zero timestamp. [ClerkSyncUrlCleanup](mdc:src/components/ClerkSyncUrlCleanup.tsx) strips the params from the URL.
+7. Header re-renders with avatar and (if admin) Admin menu.
+
+Verify in DevTools:
+- **Application → Cookies → `<satellite>`**: `__client_uat` should be a Unix timestamp (not `0`).
+- **Console**: `[Header] Auth state` should resolve to `{isLoaded: true, userId: 'user_…', userName: …}`.
+- **Network**: no requests to `<satellite>/__clerk/*` (those should be excluded by middleware matcher).
+
+---
+
+## **Related rules**
+
+- [clerk_auth_admin_user_lookup_avatar.mdc](mdc:.cursor/rules/clerk_auth_admin_user_lookup_avatar.mdc) — admin role lookup and Header avatar rendering once the satellite session is established.
