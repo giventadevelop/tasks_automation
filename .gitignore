@@ -14,3 +14,10 @@ build/
 dist/
 /property_files/
 property_files/
+
+# WhatsApp poll runtime logs (never commit)
+WhatsApp_Web_Poll/logs/*
+!WhatsApp_Web_Poll/logs/.gitkeep
+
+# JetBrains IDE local settings
+.idea/

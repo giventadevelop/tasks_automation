@@ -1,8 +1,0 @@
-
-============================================================
-[Thu 06/18/2026  8:58:38.78] scheduled run started
-ok: Thursday 2026-06-18 in season, window 08:00–18:00
-[Thu 06/18/2026  8:58:38.99] schedule gate: proceed
-[..] Starting Edge with CDP on port 9222...
-      Profile: C:\edge-cdp  (one-time WhatsApp Web login there)
-[ok] Edge CDP is up.
