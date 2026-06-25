@@ -563,7 +563,7 @@ def show_initial_dialog():
                            command=on_laundry, **button_style)
     laundry_btn.pack(pady=10)
 
-    whatsapp_poll_btn = tk.Button(content_frame, text="WhatsApp Poll",
+    whatsapp_poll_btn = tk.Button(content_frame, text="WhatsApp Poll (manual)",
                                   bg='#128C7E', fg='white',
                                   activebackground='#075E54',
                                   command=on_whatsapp_poll, **button_style)
@@ -571,7 +571,7 @@ def show_initial_dialog():
 
     whatsapp_turnout_btn = tk.Button(
         content_frame,
-        text="Volleyball Low Turnout",
+        text="Volleyball Low Turnout (Friday)",
         bg='#0B6E4F',
         fg='white',
         activebackground='#084C35',

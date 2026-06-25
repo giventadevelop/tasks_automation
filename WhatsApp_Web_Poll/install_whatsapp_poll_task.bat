@@ -40,12 +40,13 @@ goto success
 :success
 echo.
 echo Guards in run_whatsapp_poll_scheduled.bat:
-echo   - Thursdays only
-echo   - May 12 - Oct 30 ^(volleyball season^)
-echo   - 08:00-18:00 local
-echo   - Once per day max
+echo   - Thursdays only, May 12 - Oct 30
+echo   - Hourly 08:00-23:00 (retries if failed until 11 PM)
+echo   - Friday turnout: 15:00 + 16:00 retry (Yes less than 6 + weather OK)
 echo.
-echo Test:  schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"
+echo Test poll:    schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"
+echo Test turnout: schtasks /run /tn "WhatsApp Volleyball Turnout (Friday) 3PM"
+echo View logs:    view_logs.bat
 echo Remove: uninstall_whatsapp_poll_task.bat
 pause
 exit /b 0

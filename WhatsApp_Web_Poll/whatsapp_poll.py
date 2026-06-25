@@ -60,6 +60,17 @@ ACTION = os.environ.get("ACTION", "poll").strip().lower()
 POLL_OPTIONS = ["Yes", "No"]
 SEND = os.environ.get("SEND", "") == "1"
 TRACE = os.environ.get("TRACE", "") == "1"
+SCHEDULED = os.environ.get("SCHEDULED", "") == "1"
+SESSION_TIMEOUT_SEC = int(
+    os.environ.get("SESSION_TIMEOUT_SEC", "300" if SCHEDULED else "120")
+)
+POST_READY_SETTLE_SEC = int(
+    os.environ.get("POST_READY_SETTLE_SEC", "25" if SCHEDULED else "8")
+)
+PRE_SEARCH_SETTLE_SEC = int(
+    os.environ.get("PRE_SEARCH_SETTLE_SEC", "5" if SCHEDULED else "2")
+)
+MIN_CHAT_ROWS = int(os.environ.get("MIN_CHAT_ROWS", "1" if SCHEDULED else "3"))
 
 
 # Default contact (used when env var is unset OR empty).
@@ -162,29 +173,17 @@ def _location_matches_nws(points: dict) -> tuple[bool, str]:
     return True, label or WEATHER_LOCATION
 
 
-def weather_check_tomorrow() -> tuple[str, str, str]:
-    """Return (decision, human_message, cancel_reason).
-
-    decision is one of:
-      'proceed' — send the poll
-      'cancel'  — send a cancellation message (cancel_reason: 'rain' or 'temp')
-      'skip'    — outside May 12–Oct 30 season; send nothing
-
-    Checks only run for Lake Hiawatha, NJ coords and tomorrow's date in season.
-    Within season, cancel when rain is expected OR any hour in 4–8 PM is outside
-    TEMP_MIN_F..TEMP_MAX_F.
-    """
+def weather_check_for_date(target: "datetime.date") -> tuple[str, str, str]:
+    """Return (decision, human_message, cancel_reason) for target date game window."""
     import datetime as _dt
 
-    tomorrow = (_dt.datetime.now().astimezone() + _dt.timedelta(days=1)).date()
-
-    if not _in_volleyball_season(tomorrow):
+    if not _in_volleyball_season(target):
         return (
             "skip",
             (
-                f"weather: tomorrow {tomorrow.isoformat()} is outside volleyball season "
-                f"({SEASON_START_MONTH:02d}/{SEASON_START_DAY:02d}–"
-                f"{SEASON_END_MONTH:02d}/{SEASON_END_DAY:02d}) — no poll or cancel message"
+                f"weather: {target.isoformat()} is outside volleyball season "
+                f"({SEASON_START_MONTH:02d}/{SEASON_START_DAY:02d}-"
+                f"{SEASON_END_MONTH:02d}/{SEASON_END_DAY:02d})"
             ),
             "",
         )
@@ -212,7 +211,7 @@ def weather_check_tomorrow() -> tuple[str, str, str]:
     relevant = []
     for p in periods:
         st = _dt.datetime.fromisoformat(p["startTime"])
-        if st.date() != tomorrow:
+        if st.date() != target:
             continue
         if not (WEATHER_WINDOW_START_HOUR <= st.hour < WEATHER_WINDOW_END_HOUR):
             continue
@@ -236,7 +235,7 @@ def weather_check_tomorrow() -> tuple[str, str, str]:
     if not relevant:
         return (
             "proceed",
-            "weather: no forecast data for tomorrow's window — proceeding",
+            f"weather: no forecast data for {target.isoformat()} window — proceeding",
             "",
         )
 
@@ -250,8 +249,8 @@ def weather_check_tomorrow() -> tuple[str, str, str]:
     ]
     summary = (
         f"weather check for {WEATHER_LOCATION} ({nws_label}), "
-        f"tomorrow {tomorrow.isoformat()} "
-        f"{WEATHER_WINDOW_START_HOUR:02d}:00–{WEATHER_WINDOW_END_HOUR:02d}:00 local:\n"
+        f"{target.isoformat()} "
+        f"{WEATHER_WINDOW_START_HOUR:02d}:00-{WEATHER_WINDOW_END_HOUR:02d}:00 local:\n"
         + "\n".join(lines)
     )
 
@@ -260,7 +259,7 @@ def weather_check_tomorrow() -> tuple[str, str, str]:
             "cancel",
             summary + (
                 f"\n→ RAIN expected ({len(rainy_hours)} of {len(relevant)} hours flagged). "
-                "Meeting will be cancelled."
+                "Game cancelled due to weather."
             ),
             "rain",
         )
@@ -270,10 +269,10 @@ def weather_check_tomorrow() -> tuple[str, str, str]:
         return (
             "cancel",
             summary + (
-                f"\n→ Temperature outside {TEMP_MIN_F}–{TEMP_MAX_F}°F "
+                f"\n→ Temperature outside {TEMP_MIN_F}-{TEMP_MAX_F}°F "
                 f"({len(bad_temp_hours)} of {len(relevant)} hours flagged"
-                + (f"; range {min(temps)}–{max(temps)}°F" if temps else "")
-                + "). Meeting will be cancelled."
+                + (f"; range {min(temps)}-{max(temps)}°F" if temps else "")
+                + "). Game cancelled due to weather."
             ),
             "temp",
         )
@@ -281,11 +280,26 @@ def weather_check_tomorrow() -> tuple[str, str, str]:
     return (
         "proceed",
         summary + (
-            f"\n→ no rain expected and temps within {TEMP_MIN_F}–{TEMP_MAX_F}°F "
-            "— clear to send poll."
+            f"\n→ no rain expected and temps within {TEMP_MIN_F}-{TEMP_MAX_F}°F "
+            "— weather OK for game."
         ),
         "",
     )
+
+
+def weather_check_tomorrow() -> tuple[str, str, str]:
+    """Return (decision, human_message, cancel_reason) for tomorrow's game window."""
+    import datetime as _dt
+
+    tomorrow = (_dt.datetime.now().astimezone() + _dt.timedelta(days=1)).date()
+    return weather_check_for_date(tomorrow)
+
+
+def weather_check_today() -> tuple[str, str, str]:
+    """Return (decision, human_message, cancel_reason) for today's game window (Friday turnout)."""
+    import datetime as _dt
+
+    return weather_check_for_date(_dt.datetime.now().astimezone().date())
 
 
 def list_tabs() -> list:
@@ -364,10 +378,20 @@ class Tab:
         raise TimeoutError(f"CDP timeout: {method}")
 
     def eval(self, expr: str, timeout: float = 15):
+        stripped = expr.strip()
+        # Avoid double-wrapping IIFEs — an outer ()=>{} block does not return
+        # the inner IIFE's value, which broke S_CHATS_FULLY_LOADED (always None).
+        if (
+            (stripped.startswith("(()=>") or stripped.startswith("(function"))
+            and stripped.endswith(")()")
+        ):
+            expression = stripped
+        else:
+            expression = f"(()=>{{{expr}}})()"
         r = self._call(
             "Runtime.evaluate",
             {
-                "expression": f"(()=>{{{expr}}})()",
+                "expression": expression,
                 "returnByValue": True,
                 "awaitPromise": False,
             },
@@ -552,6 +576,33 @@ S_LOGGED_IN = (
     "'[role=\"listitem\"], [role=\"row\"], [data-testid=\"cell-frame-container\"], div[role=\"gridcell\"]'"
     ");"
     "return rows.length>0 || !!search;"
+)
+S_CHATS_FULLY_LOADED = (
+    f"const minRows={MIN_CHAT_ROWS};"
+    "const side=document.querySelector("
+    "'#pane-side, #side, [data-testid=\"chat-list\"], [data-testid=\"chatlist-panel\"]'"
+    ");"
+    "if(!side) return {ready:false, reason:'no_sidebar'};"
+    "const rows=side.querySelectorAll("
+    "'[role=\"listitem\"], [role=\"row\"], [data-testid=\"cell-frame-container\"], div[role=\"gridcell\"]'"
+    ");"
+    "const search=document.querySelector('[data-testid=\"chat-list-search\"]')"
+    "||[...document.querySelectorAll("
+    "'input, [role=\"textbox\"], div[contenteditable=\"true\"]'"
+    ")].find(e=>{"
+    "  if(!e.offsetParent) return false;"
+    "  const al=(e.getAttribute('aria-label')||'').toLowerCase();"
+    "  const ph=(e.getAttribute('placeholder')||'').toLowerCase();"
+    "  return al.includes('search') || ph.includes('search') || e.getAttribute('data-tab')==='3';"
+    "});"
+    "if(!search && rows.length<minRows) return {ready:false, reason:'no_search', rows:rows.length};"
+    "if(rows.length<minRows) return {ready:false, reason:'chats_loading', rows:rows.length};"
+    "const busy=!!document.querySelector("
+    "'[role=\"progressbar\"], [data-testid=\"alert-phone\"], "
+    "[data-icon=\"progress-spinner\"], [data-testid=\"startup-clocks\"]'"
+    ");"
+    "if(busy) return {ready:false, reason:'syncing', rows:rows.length};"
+    "return {ready:true, rows:rows.length};"
 )
 S_WHATSAPP_STATE = (
     "if(document.querySelector("
@@ -744,41 +795,61 @@ S_LATEST_POLL_VOTES = (
     "'div[data-id], [data-testid=\"msg-container\"], div.message-in, div.message-out'"
     ")];"
     "const needles=['volleyball','shall we play'];"
+    "function pickCount(text,label){"
+    "  const re=new RegExp('\\\\b'+label+'\\\\b[\\\\s\\\\S]{0,80}?(\\\\d+)','i');"
+    "  const m=text.match(re);"
+    "  return m?parseInt(m[1],10):null;"
+    "}"
     "function parseVotes(msg){"
     "  const txt=(msg.innerText||'');"
     "  const lower=txt.toLowerCase();"
     "  if(!needles.some(n=>lower.includes(n))) return null;"
-    "  if(!/\\byes\\b/i.test(txt)||!/\\bno\\b/i.test(txt)) return null;"
-    "  let yesVotes=null,noVotes=null;"
+    "  if(!/\\bview votes\\b/i.test(txt)&&!/\\byes\\b/i.test(txt)) return null;"
+    "  let yesVotes=pickCount(txt,'yes');"
+    "  let noVotes=pickCount(txt,'no');"
     "  const lines=txt.split('\\n').map(l=>l.trim()).filter(Boolean);"
     "  for(let j=0;j<lines.length;j++){"
-    "    if(/^yes$/i.test(lines[j])){"
-    "      for(let k=j+1;k<Math.min(j+5,lines.length);k++){"
-    "        const m=lines[k].match(/(\\d+)\\s*(?:vote|votes)?/i)||lines[k].match(/^(\\d+)$/);"
+    "    const yesInline=lines[j].match(/^yes\\b\\s*(\\d+)?/i);"
+    "    if(yesInline&&yesInline[1]) yesVotes=parseInt(yesInline[1],10);"
+    "  else if(/^yes$/i.test(lines[j])){"
+    "      for(let k=j+1;k<Math.min(j+6,lines.length);k++){"
+    "        const m=lines[k].match(/^(\\d+)$/);"
     "        if(m){yesVotes=parseInt(m[1],10);break;}"
     "      }"
     "    }"
-    "    if(/^no$/i.test(lines[j])){"
-    "      for(let k=j+1;k<Math.min(j+5,lines.length);k++){"
-    "        const m=lines[k].match(/(\\d+)\\s*(?:vote|votes)?/i)||lines[k].match(/^(\\d+)$/);"
+    "    const noInline=lines[j].match(/^no\\b\\s*(\\d+)?/i);"
+    "    if(noInline&&noInline[1]) noVotes=parseInt(noInline[1],10);"
+    "  else if(/^no$/i.test(lines[j])){"
+    "      for(let k=j+1;k<Math.min(j+6,lines.length);k++){"
+    "        const m=lines[k].match(/^(\\d+)$/);"
     "        if(m){noVotes=parseInt(m[1],10);break;}"
     "      }"
     "    }"
+    "  }"
+    "  const pollRoot=msg.querySelector('[data-testid*=\"poll\"], [role=\"list\"]')||msg;"
+    "  const optionRows=[...pollRoot.querySelectorAll("
+    "'div[role=\"button\"], li, label, span'"
+    ")];"
+    "  for(const row of optionRows){"
+    "    const rowTxt=(row.innerText||'').trim();"
+    "    if(!rowTxt) continue;"
+    "    const nums=[...rowTxt.matchAll(/(\\d+)/g)].map(m=>parseInt(m[1],10));"
+    "    if(/^yes\\b/i.test(rowTxt)&&nums.length) yesVotes=nums[nums.length-1];"
+    "    if(/^no\\b/i.test(rowTxt)&&nums.length) noVotes=nums[nums.length-1];"
     "  }"
     "  const els=[...msg.querySelectorAll('[aria-label],[role=\"button\"],button,span')]"
     "  .filter(e=>e.offsetParent!==null);"
     "  for(const el of els){"
     "    const label=(el.getAttribute('aria-label')||el.innerText||'').trim();"
-    "    const vm=label.match(/(\\d+)\\s*(?:vote|votes)/i);"
+    "    const vm=label.match(/(\\d+)\\s*(?:vote|votes)/i)||label.match(/^(\\d+)$/);"
     "    if(!vm) continue;"
     "    const v=parseInt(vm[1],10);"
     "    if(/\\byes\\b/i.test(label)) yesVotes=v;"
     "    else if(/\\bno\\b/i.test(label)) noVotes=v;"
     "  }"
     "  if(yesVotes===null&&noVotes===null){"
-    "    const nums=[...txt.matchAll(/(\\d+)\\s*(?:vote|votes)/gi)].map(m=>parseInt(m[1],10));"
+    "    const nums=[...txt.matchAll(/(\\d+)\\s*(?:vote|votes)?/gi)].map(m=>parseInt(m[1],10));"
     "    if(nums.length>=2){yesVotes=nums[0];noVotes=nums[1];}"
-    "    else if(nums.length===1) yesVotes=nums[0];"
     "  }"
     "  if(yesVotes===null&&noVotes===null) return null;"
     "  return {"
@@ -828,7 +899,22 @@ def read_latest_poll_votes(tab: Tab) -> dict:
 
 
 def run_turnout_check(tab: Tab) -> int:
-    """Read latest poll; send LOW_TURNOUT_MSG if Yes votes < MIN_PLAYERS."""
+    """Read latest poll; send LOW_TURNOUT_MSG if weather OK and Yes votes < MIN_PLAYERS."""
+    if not SKIP_WEATHER:
+        try:
+            weather_decision, msg, cancel_reason = weather_check_today()
+            if msg:
+                for line in msg.splitlines():
+                    log(line)
+            if weather_decision == "cancel":
+                log(
+                    f"weather cancelled game today ({cancel_reason}) — "
+                    "not sending low-turnout message"
+                )
+                return 0
+        except Exception as exc:
+            log(f"weather: check failed ({exc}) — proceeding with turnout read")
+
     info = read_latest_poll_votes(tab)
     if not info.get("found"):
         fail(f"could not find a volleyball poll in chat: {info.get('error', 'unknown')}")
@@ -859,6 +945,12 @@ def run_send_low_turnout_cancel(tab: Tab) -> int:
     return 0
 
 
+def _parse_load_info(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    return {"ready": False, "reason": "bad_eval", "raw": repr(raw)[:120]}
+
+
 def ensure_whatsapp_session(tab: Tab) -> None:
     """Open web.whatsapp.com, click Log in if needed, wait until chat list loads."""
     try:
@@ -869,15 +961,19 @@ def ensure_whatsapp_session(tab: Tab) -> None:
     url = tab.eval("return location.href;") or ""
     if "web.whatsapp.com" not in url:
         tab.eval("location.href='https://web.whatsapp.com/'; return true;")
-        time.sleep(2.0)
+        time.sleep(3.0)
         url = tab.eval("return location.href;") or ""
     log(f"on: {url}")
-    log("checking WhatsApp login state… (watch the Edge window)")
+    log(
+        f"checking WhatsApp login state "
+        f"(timeout={SESSION_TIMEOUT_SEC}s, scheduled={SCHEDULED})…"
+    )
 
-    deadline = time.time() + 120
+    deadline = time.time() + SESSION_TIMEOUT_SEC
     login_clicked = False
     reload_attempted = False
     last_log = time.time()
+    sidebar_seen = False
     while time.time() < deadline:
         state = "unknown"
         logged_in = False
@@ -886,8 +982,33 @@ def ensure_whatsapp_session(tab: Tab) -> None:
         except Exception as exc:
             log(f"login check: {exc}")
         if logged_in:
-            log("WhatsApp Web session ready (chat list visible)")
-            return
+            sidebar_seen = True
+            try:
+                load_info = _parse_load_info(tab.eval(S_CHATS_FULLY_LOADED, timeout=10))
+            except Exception as exc:
+                load_info = {"ready": False, "reason": f"eval_err:{exc}"}
+            if load_info.get("ready"):
+                rows = load_info.get("rows", "?")
+                log(f"WhatsApp chat list ready ({rows} chats visible)")
+                if POST_READY_SETTLE_SEC > 0:
+                    log(
+                        f"waiting {POST_READY_SETTLE_SEC}s for chats/messages to finish syncing "
+                        "(do not click away from Edge)…"
+                    )
+                    time.sleep(POST_READY_SETTLE_SEC)
+                log("WhatsApp Web session ready")
+                return
+            reason = load_info.get("reason", "unknown")
+            rows = load_info.get("rows", "?")
+            if time.time() - last_log >= 5:
+                secs_left = int(deadline - time.time())
+                log(
+                    f"sidebar visible but chats still loading "
+                    f"(reason={reason!r}, rows={rows}, {secs_left}s left)"
+                )
+                last_log = time.time()
+            time.sleep(1.5)
+            continue
 
         try:
             state = tab.eval(S_WHATSAPP_STATE, timeout=8) or "unknown"
@@ -903,18 +1024,20 @@ def ensure_whatsapp_session(tab: Tab) -> None:
                 log("→ Click Log in / link with phone number in Edge if prompted.")
             elif state == "loading":
                 log("→ WhatsApp is still loading or syncing chats.")
+            elif sidebar_seen:
+                log("→ Chat sidebar appeared; waiting for chat rows to populate.")
             last_log = time.time()
 
         if state == "loading" and not reload_attempted:
-            elapsed = 120 - int(deadline - time.time())
-            if elapsed > 25:
+            elapsed = SESSION_TIMEOUT_SEC - int(deadline - time.time())
+            if elapsed > 45:
                 log("still loading — reloading WhatsApp tab once")
                 try:
                     tab.eval("location.reload(); return true;")
                 except Exception as exc:
                     log(f"reload failed: {exc}")
                 reload_attempted = True
-                time.sleep(4.0)
+                time.sleep(6.0)
                 continue
 
         if not login_clicked and state in ("landing", "unknown"):
@@ -935,16 +1058,31 @@ def ensure_whatsapp_session(tab: Tab) -> None:
     try:
         state = tab.eval(S_WHATSAPP_STATE)
         log(f"final WhatsApp state: {state!r}")
+        if state == "ready":
+            log(
+                "strict chat-load check timed out but WhatsApp looks ready — continuing"
+            )
+            if POST_READY_SETTLE_SEC > 0:
+                time.sleep(POST_READY_SETTLE_SEC)
+            log("WhatsApp Web session ready")
+            return
     except Exception:
         pass
     fail(
-        "WhatsApp Web sidebar did not appear within 120s. "
+        f"WhatsApp Web did not finish loading within {SESSION_TIMEOUT_SEC}s. "
         "Open Edge, finish login at web.whatsapp.com (scan QR), wait for chats to load, then re-run."
     )
 
 
 def open_contact_chat(tab):
     """Run the search → click → header-verify flow. Returns when chat is open."""
+    try:
+        tab._call("Page.bringToFront", timeout=5)
+    except Exception:
+        pass
+    if PRE_SEARCH_SETTLE_SEC > 0:
+        log(f"pausing {PRE_SEARCH_SETTLE_SEC}s before opening chat search…")
+        time.sleep(PRE_SEARCH_SETTLE_SEC)
     # Close any open in-chat search panel from prior runs.
     try:
         tab.eval(
@@ -985,16 +1123,16 @@ def open_contact_chat(tab):
     )
     time.sleep(0.2)
     tab.insert_text(CONTACT)
-    time.sleep(2.0)
+    time.sleep(3.0 if SCHEDULED else 2.0)
     actual = tab.eval(
         "const el=document.activeElement;"
         "return el ? (el.value!==undefined?el.value:el.innerText||el.textContent||'') : '';"
     )
     log(f"search box value after typing: {actual!r}")
-    tab.wait(f"!!({S_CONTACT_RESULT})", f"search result for {CONTACT!r}", timeout=15)
+    tab.wait(f"!!({S_CONTACT_RESULT})", f"search result for {CONTACT!r}", timeout=25 if SCHEDULED else 15)
     tab.click(S_CONTACT_RESULT, f"open chat: {CONTACT}")
-    time.sleep(0.6)
-    tab.wait(f"!!({S_CHAT_OPEN_HEADER})", f"chat header for {CONTACT!r}", timeout=25)
+    time.sleep(1.0 if SCHEDULED else 0.6)
+    tab.wait(f"!!({S_CHAT_OPEN_HEADER})", f"chat header for {CONTACT!r}", timeout=40 if SCHEDULED else 25)
 
 
 def send_text_message(tab, text: str) -> None:

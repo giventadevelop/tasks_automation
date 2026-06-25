@@ -61,7 +61,7 @@
                 <li><a href="#layout">Repository layout</a></li>
                 <li><a href="#build">Build the Windows .exe (PyInstaller)</a></li>
                 <li><a href="#deploy">Deploy and <code>property_files</code></a></li>
-                <li><a href="#desktop">Desktop shortcut (single icon)</a></li>
+                <li><a href="#desktop">Desktop shortcut &amp; single-shot launch</a></li>
                 <li><a href="#dashboard">Dashboard vs scheduled launches</a></li>
                 <li><a href="#edge">Microsoft Edge CDP profiles</a></li>
                 <li><a href="#troubleshoot">Troubleshooting</a></li>
@@ -72,7 +72,7 @@
         <div class="section-intro" id="overview">
             <h2 style="margin-top:0;color:#0d3b66;">What you are shipping</h2>
             <ul>
-                <li><strong>Main app:</strong> Tkinter dashboard — Calendar, Contacts, Laundry, WhatsApp Poll, YouTube tools.</li>
+                <li><strong>Main app:</strong> Tkinter dashboard — Calendar, Contacts, Laundry, <strong>WhatsApp Poll</strong>, <strong>Volleyball Low Turnout</strong>, YouTube tools.</li>
                 <li><strong>Packaging:</strong> PyInstaller <strong>onefile</strong> → <code>calendar_automate.exe</code> (windowed, no console).</li>
                 <li><strong>Satellite automations:</strong> Stay as folders under <code>&lt;REPO_ROOT&gt;</code>; the frozen .exe launches their <code>.bat</code> files in a new console — it is not a Python interpreter for those scripts.</li>
             </ul>
@@ -151,11 +151,12 @@
             <p>Set <code>TASKS_AUTOMATION_ROOT=&lt;REPO_ROOT&gt;</code> so Laundry / WhatsApp / YouTube buttons find their <code>.bat</code> files. The launcher shortcut (below) sets this automatically.</p>
         </div>
 
-        <h2 id="desktop">Desktop shortcut (single icon)</h2>
+        <h2 id="desktop">Desktop shortcut &amp; single-shot launch</h2>
         <div class="section-container">
             <div class="section-header">One-click desktop access</div>
             <ol>
-                <li>From <code>&lt;REPO_ROOT&gt;\documentation\</code>, run <code class="script-name">create_desktop_shortcut.bat</code>.</li>
+                <li><strong>Build</strong> (first time or after dashboard changes): <code class="script-name">documentation\build_daily_tasks.bat</code> — installs deps and builds <code>dist\calendar_automate.exe</code>.</li>
+                <li>From <code>&lt;REPO_ROOT&gt;\documentation\</code>, run <code class="script-name">create_desktop_shortcut.bat</code> (or <code class="script-name">build_daily_tasks.bat --shortcut</code>).</li>
                 <li>This creates <strong>Daily Tasks Automation.lnk</strong> on your Desktop.</li>
                 <li>The shortcut targets <code class="script-name">launch_daily_tasks_dashboard.bat</code>, which:
                     <ul>
@@ -164,6 +165,12 @@
                     </ul>
                 </li>
             </ol>
+            <div class="info">
+                <strong>Dashboard WhatsApp buttons:</strong> <strong>WhatsApp Poll (manual)</strong> and <strong>Volleyball Low Turnout (Friday)</strong> launch <code>WhatsApp_Web_Poll\*.bat</code>. Each calls <code>start_edge_cdp.bat</code> — if Edge is closed, it starts Edge with <code>web.whatsapp.com</code> in profile <code>C:\edge-cdp</code>.
+            </div>
+            <div class="warning">
+                <strong>The .exe is the dashboard only.</strong> WhatsApp, laundry, and YouTube still need their repo folders and Python for the <code>.bat</code> scripts. Keep the full <code>tasks_automation</code> tree on disk.
+            </div>
             <div class="success">
                 <strong>Recommended install layout:</strong><br>
                 Keep the full <code>tasks_automation</code> tree on disk. Place <code>property_files</code> next to <code>calendar_automate.exe</code> if you copy the .exe to a separate install folder — or run from the repo <code>dist</code> folder during development.
@@ -191,7 +198,12 @@
                     <tr>
                         <td><strong>WhatsApp Poll</strong></td>
                         <td>GUI asks <strong>contact name</strong> and <strong>send vs dry-run</strong>, then runs <code class="script-name">run_whatsapp_poll.bat</code> with <code>SKIP_PROMPTS=1</code></td>
-                        <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code> — no prompts; fixed contact; always <code>SEND=1</code>; Thursday season gates</td>
+                        <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code> — Thursday hourly 8 AM–11 PM; retries until success; weather + poll</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Volleyball Low Turnout</strong></td>
+                        <td>GUI: <strong>check latest poll</strong> (&lt; 6 Yes → cancel) or <strong>send cancel now</strong>; runs <code class="script-name">run_whatsapp_turnout_check.bat</code> or <code class="script-name">run_whatsapp_low_turnout_cancel.bat</code></td>
+                        <td><code class="script-name">run_whatsapp_turnout_check_scheduled.bat</code> — Friday 3 PM + 4 PM retry; reads poll; weather gate</td>
                     </tr>
                     <tr>
                         <td><strong>Laundry</strong></td>
@@ -210,14 +222,21 @@
     → run_whatsapp_poll.bat (SKIP_PROMPTS=1, CONTACT, SEND env)
     → start_edge_cdp.bat → whatsapp_poll.py
 
+Dashboard → Volleyball Low Turnout button
+    → Tk dialog: check poll vs force cancel + send/dry-run
+    → run_whatsapp_turnout_check.bat OR run_whatsapp_low_turnout_cancel.bat
+
 Dashboard → Laundry button
     → Tk Yes/No confirm
     → run_laundry.bat
     → start_edge_cdp.bat → _cdp_driver.py
 
-Task Scheduler (Thursday) → run_whatsapp_poll_scheduled.bat
-    → schedule_gate.py (no GUI)
-    → fixed CONTACT, SEND=1, logs only</div>
+Task Scheduler (Thursday hourly) → run_whatsapp_poll_scheduled.bat
+    → schedule_gate.py (success/failed status, retry until 11 PM)
+    → fixed CONTACT, SEND=1, logs
+
+Task Scheduler (Friday 3 PM / 4 PM) → run_whatsapp_turnout_check_scheduled.bat
+    → read poll Yes votes; cancel if &lt; 6 and weather OK</div>
         </div>
 
         <h2 id="edge">Microsoft Edge CDP profiles</h2>
@@ -242,7 +261,9 @@ Task Scheduler (Thursday) → run_whatsapp_poll_scheduled.bat
                     <tr><td>Laundry / WhatsApp button “not found”</td><td>Set <code>TASKS_AUTOMATION_ROOT</code> to <code>&lt;REPO_ROOT&gt;</code> or use the desktop launcher shortcut.</td></tr>
                     <tr><td>Properties file missing</td><td>Add <code>property_files</code> beside <code>calendar_automate.exe</code> with your offline config.</td></tr>
                     <tr><td>CDP port in use</td><td>Close all Chrome/Edge; run the correct <code>start_edge_cdp.bat</code>.</td></tr>
-                    <tr><td>Scheduled poll ran twice</td><td>Check stamp file under <code>%LOCALAPPDATA%\tasks_automation\</code>; see WhatsApp schedule HTML doc.</td></tr>
+                    <tr><td>Scheduled poll ran twice</td><td>Check <code>whatsapp_poll_status.json</code>; success stops hourly retries. See WhatsApp schedule HTML docs.</td></tr>
+                    <tr><td>Poll log incomplete (no [wapoll] lines)</td><td>WhatsApp slow to load; hourly retry or run <code>view_logs.bat</code>. Avoid mouse in Edge during run.</td></tr>
+                    <tr><td>Friday cancel not sent</td><td>Yes votes may be ≥ 6, or weather cancelled game, or turnout already succeeded. See Friday turnout HTML doc.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -252,7 +273,9 @@ Task Scheduler (Thursday) → run_whatsapp_poll_scheduled.bat
             <div class="section-header">Deeper dives (subfolders)</div>
             <ul>
                 <li><code>google_calendar_and_contacts_automate/documentation/Calendar_App_PyInstaller_Bundle_Guide.html</code> — PyInstaller detail, antivirus notes</li>
-                <li><code>WhatsApp_Web_Poll/documentation/whatsapp_poll_thursday_schedule.html</code> — Thursday Task Scheduler</li>
+                <li><code>WhatsApp_Web_Poll/documentation/whatsapp_poll_thursday_schedule.html</code> — Thursday poll, hourly retries, full weekly overview</li>
+                <li><code>WhatsApp_Web_Poll/documentation/whatsapp_poll_friday_turnout.html</code> — Friday 3 PM / 4 PM turnout check</li>
+                <li><code>WhatsApp_Web_Poll/documentation/whatsapp_poll_logs.html</code> — Log viewer, status JSON, troubleshooting</li>
                 <li><code>Laundry_TryCents/documentation/laundry_hermes_weekly_schedule.html</code> — Hermes weekly laundry</li>
                 <li><code>google_calendar_and_contacts_automate/calendar_api_README.md</code> — OAuth and API setup</li>
             </ul>

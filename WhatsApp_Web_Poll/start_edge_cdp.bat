@@ -53,6 +53,8 @@ timeout /t 1 /nobreak >nul
 curl.exe -fs --max-time 2 "%CDP_URL%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [ok] Edge CDP is up.
+    REM Brief warmup so web.whatsapp.com can start loading before automation attaches.
+    timeout /t 5 /nobreak >nul
     exit /b 0
 )
 set /a tries+=1

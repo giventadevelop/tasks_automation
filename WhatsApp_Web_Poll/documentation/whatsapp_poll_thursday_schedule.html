@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="WhatsApp Web Poll Thursday schedule — Windows Task Scheduler, season gates, Edge CDP, and setup steps.">
-    <title>WhatsApp Web Poll — Thursday Scheduled Run</title>
+    <meta name="description" content="WhatsApp volleyball automation — Thursday poll schedule, hourly retries, Friday turnout check, Edge CDP, logs, and Task Scheduler setup.">
+    <title>WhatsApp Volleyball — Weekly Schedule (Thursday Poll + Friday Turnout)</title>
     <style>
         body {
             max-width: 1200px;
@@ -360,30 +360,36 @@
 </head>
 <body>
     <main>
-        <h1>WhatsApp Web Poll — Thursday Scheduled Run</h1>
+        <h1>WhatsApp Volleyball — Weekly Schedule</h1>
 
         <div class="toc">
             <h2>Table of Contents</h2>
             <ul>
                 <li><a href="#overview">Overview</a></li>
-                <li><a href="#schedule-policy">Schedule policy (gates)</a></li>
-                <li><a href="#files">Files added for scheduling</a></li>
+                <li><a href="#schedule-policy">Thursday schedule policy (gates)</a></li>
+                <li><a href="#retry-status">Hourly retries &amp; success/failure status</a></li>
+                <li><a href="#friday-turnout">Friday turnout check (3 PM / 4 PM)</a></li>
+                <li><a href="#files">Files for scheduling</a></li>
                 <li><a href="#one-time-setup">One-time setup</a></li>
-                <li><a href="#install-task">Install the Windows task</a></li>
+                <li><a href="#install-task">Install Windows tasks</a></li>
                 <li><a href="#thursday-flow">What happens on Thursday</a></li>
                 <li><a href="#manual-vs-scheduled">Manual vs scheduled runs</a></li>
+                <li><a href="#logs">Logs &amp; status viewer</a></li>
                 <li><a href="#commands">Useful commands</a></li>
                 <li><a href="#troubleshooting">Troubleshooting</a></li>
                 <li><a href="#env-vars">Environment variables</a></li>
+                <li><a href="#related-docs">Related documentation</a></li>
             </ul>
         </div>
 
         <div class="section-intro">
             <p>
-                This page documents how the <strong>Thursday volleyball WhatsApp poll</strong> is scheduled on Windows
-                using <strong>Task Scheduler</strong> (not WSL, not browser-use, not Hermes). The poll runs
+                This page documents the <strong>Thursday volleyball WhatsApp poll</strong> and how it fits into the
+                full weekly flow (Friday turnout check is detailed in
+                <a href="whatsapp_poll_friday_turnout.html">Friday turnout guide</a>).
+                Scheduling uses <strong>Windows Task Scheduler</strong> (not WSL, not browser-use). The poll runs
                 <strong>the day before Friday games</strong>, checks weather for Lake Hiawatha, NJ, and either sends
-                the poll or a cancellation message via <strong>Microsoft Edge + CDP</strong>.
+                the poll or a weather cancellation message via <strong>Microsoft Edge + CDP</strong>.
             </p>
             <p class="tight-bottom">
                 Project folder: <code>WhatsApp_Web_Poll/</code> under your <code>tasks_automation</code> repo
@@ -405,11 +411,11 @@
             </div>
         </div>
 
-        <h2 id="schedule-policy">Schedule policy (gates)</h2>
+        <h2 id="schedule-policy">Thursday schedule policy (gates)</h2>
         <div class="section-container">
             <div class="section-header">📅 When the scheduled runner actually fires</div>
             <p>
-                Task Scheduler may trigger often (wake, unlock, weekly time), but
+                Task Scheduler triggers hourly on Thursday (8 AM–11 PM), but
                 <code class="script-name">schedule_gate.py</code> enforces these rules before anything is sent:
             </p>
             <table>
@@ -433,13 +439,18 @@
                     </tr>
                     <tr>
                         <td>Run window</td>
-                        <td><strong>08:00 – 18:00</strong> local</td>
-                        <td>Poll asks for Friday noon confirmation — morning/afternoon Thursday is ideal</td>
+                        <td><strong>08:00 – 23:00</strong> local</td>
+                        <td>Hourly retries until <strong>11 PM</strong> if the poll has not succeeded yet</td>
                     </tr>
                     <tr>
-                        <td>Once per day</td>
-                        <td>Stamp file</td>
-                        <td><code>%LOCALAPPDATA%\tasks_automation\whatsapp_poll_last_run.txt</code></td>
+                        <td>Success tracking</td>
+                        <td>Status JSON</td>
+                        <td><code>%LOCALAPPDATA%\tasks_automation\whatsapp_poll_status.json</code> — retries stop after <code>success</code></td>
+                    </tr>
+                    <tr>
+                        <td>Legacy stamp</td>
+                        <td>Date file</td>
+                        <td><code>whatsapp_poll_last_run.txt</code> updated on success (same folder)</td>
                     </tr>
                 </tbody>
             </table>
@@ -472,7 +483,52 @@
             </table>
         </div>
 
-        <h2 id="files">Files added for scheduling</h2>
+        <h2 id="retry-status">Hourly retries &amp; success/failure status</h2>
+        <div class="section-container">
+            <div class="section-header">🔁 Retry until success or 11 PM</div>
+            <p>
+                If a Thursday run <strong>fails</strong> (WhatsApp slow to load, CDP error, timeout), the gate allows
+                another attempt on the <strong>next hourly trigger</strong> until either:
+            </p>
+            <ul>
+                <li>The poll (or weather cancel message) is sent successfully → status <code>success</code>, no more retries that day</li>
+                <li>Local time passes <strong>23:00</strong> (11 PM) → gate skips until next Thursday</li>
+            </ul>
+            <p><code class="script-name">run_status.py</code> writes JSON status files:</p>
+            <table>
+                <thead><tr><th>File</th><th>Fields</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><code>whatsapp_poll_status.json</code></td>
+                        <td><code>date</code>, <code>status</code> (success|failed|pending), <code>attempts</code>, <code>last_attempt</code>, <code>detail</code></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="info">
+                <strong>Check status:</strong> <code>py -3 schedule_gate.py --status</code> or open
+                <a href="whatsapp_poll_logs.html">logs viewer</a> (<code>view_logs.bat</code>).
+            </div>
+        </div>
+
+        <h2 id="friday-turnout">Friday turnout check (3 PM / 4 PM)</h2>
+        <div class="section-container">
+            <div class="section-header">👥 Low turnout cancellation (separate from Thursday poll)</div>
+            <p>
+                On <strong>Friday</strong>, a second automation reads the latest volleyball poll in the group chat.
+                If <strong>Yes votes &lt; 6</strong> and <strong>today's weather is OK</strong> (4–8 PM), it sends a
+                low-turnout cancel message. Scheduled at <strong>3:00 PM</strong> with a <strong>4:00 PM retry</strong>.
+            </p>
+            <p>See the full guide: <a href="whatsapp_poll_friday_turnout.html"><strong>Friday turnout documentation</strong></a>.</p>
+            <table>
+                <thead><tr><th>Task name</th><th>Time</th></tr></thead>
+                <tbody>
+                    <tr><td><code>WhatsApp Volleyball Turnout (Friday) 3PM</code></td><td>Friday 15:00</td></tr>
+                    <tr><td><code>WhatsApp Volleyball Turnout (Friday) 4PM</code></td><td>Friday 16:00 (retry if 3 PM failed)</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="files">Files for scheduling</h2>
         <div class="section-container">
             <div class="section-header">📁 New / updated scripts</div>
             <table>
@@ -485,23 +541,51 @@
                 <tbody>
                     <tr>
                         <td><code class="script-name">schedule_gate.py</code></td>
-                        <td>Thursday / season / time / once-per-day checks</td>
+                        <td>Thursday / season / time / success-status checks; <code>--mark-success</code> / <code>--mark-failed</code></td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">schedule_gate_turnout.py</code></td>
+                        <td>Friday 3 PM / 4 PM turnout gate</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_status.py</code></td>
+                        <td>Success/failure JSON status for poll and turnout</td>
                     </tr>
                     <tr>
                         <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code></td>
-                        <td>Non-interactive runner: gate → Edge CDP → poll (<code>SEND=1</code>, logs to <code>logs/</code>)</td>
+                        <td>Non-interactive Thursday runner: gate → Edge → poll → mark status → logs</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_turnout_check_scheduled.bat</code></td>
+                        <td>Non-interactive Friday turnout runner</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_turnout_check.bat</code></td>
+                        <td>Manual turnout check (read poll, cancel if &lt; 6 Yes)</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_low_turnout_cancel.bat</code></td>
+                        <td>Manual low-turnout cancel (skip poll read)</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">log_rotate.py</code> / <code class="script-name">generate_log_viewer.py</code></td>
+                        <td>14-day log rotation; builds <code>logs/index.html</code></td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">view_logs.bat</code></td>
+                        <td>Rotate logs, rebuild viewer, open in browser</td>
                     </tr>
                     <tr>
                         <td><code class="script-name">install_whatsapp_poll_task.bat</code></td>
-                        <td>One-click Task Scheduler install (calls PowerShell helper)</td>
+                        <td>Installs Thursday hourly + Friday 3/4 PM tasks</td>
                     </tr>
                     <tr>
                         <td><code class="script-name">install_whatsapp_poll_task.ps1</code></td>
-                        <td>Creates UTF-16 task XML with multiple triggers</td>
+                        <td>PowerShell: schtasks with <code>StartWhenAvailable</code>, hourly repetition</td>
                     </tr>
                     <tr>
                         <td><code class="script-name">uninstall_whatsapp_poll_task.bat</code></td>
-                        <td>Removes the scheduled task</td>
+                        <td>Removes all poll + turnout scheduled tasks</td>
                     </tr>
                     <tr>
                         <td><code class="script-name">start_edge_cdp.bat</code></td>
@@ -513,7 +597,12 @@
                     </tr>
                 </tbody>
             </table>
-            <p><strong>Task name in Windows:</strong> <code>WhatsApp Volleyball Poll (Thursday)</code></p>
+            <p><strong>Task names in Windows:</strong></p>
+            <ul>
+                <li><code>WhatsApp Volleyball Poll (Thursday)</code> — hourly 8 AM–11 PM</li>
+                <li><code>WhatsApp Volleyball Turnout (Friday) 3PM</code></li>
+                <li><code>WhatsApp Volleyball Turnout (Friday) 4PM</code></li>
+            </ul>
         </div>
 
         <h2 id="one-time-setup">One-time setup</h2>
@@ -547,7 +636,7 @@
             </div>
         </div>
 
-        <h2 id="install-task">Install the Windows task</h2>
+        <h2 id="install-task">Install Windows tasks</h2>
         <div class="section-container usage">
             <div class="section-header usage">⚙️ Task Scheduler triggers</div>
             <table>
@@ -559,50 +648,52 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td>Weekly Thursday 08:00</td>
-                        <td><code>StartWhenAvailable</code> — if PC was off at 8 AM, runs when it comes on later that Thursday</td>
+                        <td>Weekly Thursday 08:00, repeat hourly 15 h</td>
+                        <td>Runs at 8, 9, 10, … 22, 23 — <code>StartWhenAvailable</code> catches missed slots if PC was asleep</td>
                     </tr>
                     <tr>
-                        <td>Resume from sleep</td>
-                        <td>System event: Power-Troubleshooter Event ID 1</td>
+                        <td>Weekly Friday 15:00</td>
+                        <td>Turnout check — read poll, cancel if &lt; 6 Yes and weather OK</td>
                     </tr>
                     <tr>
-                        <td>Session unlock</td>
-                        <td>When you unlock Windows (e.g. PC woke Thursday morning)</td>
+                        <td>Weekly Friday 16:00</td>
+                        <td>Turnout retry if 3 PM failed or PC was off</td>
                     </tr>
                 </tbody>
             </table>
             <p>Double-click <code class="script-name">install_whatsapp_poll_task.bat</code> in the <code>WhatsApp_Web_Poll</code> folder.</p>
             <div class="success">
-                <p class="tight-top"><strong>After install:</strong> logs appear under <code>WhatsApp_Web_Poll/logs/whatsapp_poll_YYYYMMDD.log</code>.</p>
+                <p class="tight-top"><strong>After install:</strong> logs under <code>WhatsApp_Web_Poll/logs/</code>;
+                open <code class="script-name">view_logs.bat</code> or <a href="whatsapp_poll_logs.html">logs documentation</a>.</p>
             </div>
         </div>
 
         <h2 id="thursday-flow">What happens on Thursday</h2>
         <div class="section-container">
             <div class="section-header">⚙️ End-to-end flow</div>
-            <div class="flow-diagram">Task Scheduler trigger (time / wake / unlock)
+            <div class="flow-diagram">Task Scheduler (hourly Thu 8–23, or Fri 15:00 / 16:00)
         │
         ▼
-run_whatsapp_poll_scheduled.bat
+run_whatsapp_poll_scheduled.bat  OR  run_whatsapp_turnout_check_scheduled.bat
         │
-        ├─► schedule_gate.py ──► skip? (wrong day / season / time / already ran) → exit 0, log only
+        ├─► schedule_gate.py / schedule_gate_turnout.py
+        │       skip? (wrong day / season / time / already succeeded) → exit 0
+        │       failed earlier today? → allow retry
         │
-        ├─► start_edge_cdp.bat ──► Edge on localhost:9222 (C:\edge-cdp profile)
+        ├─► start_edge_cdp.bat → Edge localhost:9222 (C:\edge-cdp)
+        │       10s warmup + longer WhatsApp load waits when SCHEDULED=1
         │
         ├─► whatsapp_poll.py
-        │       ├─► weather_check_tomorrow() → rain/temp cancel OR send poll
-        │       ├─► ensure_whatsapp_session() → open web.whatsapp.com, wait for chat list
-        │       ├─► search contact "Volleyball Friday"
-        │       └─► send poll OR cancellation message (SEND=1)
+        │       Thu: weather_check_tomorrow() → poll OR rain/temp cancel
+        │       Fri: weather_check_today() → read poll → low-turnout cancel if Yes &lt; 6
         │
-        └─► schedule_gate.py --mark  (only if exit code 0)</div>
+        └─► --mark-success or --mark-failed → run_status.py JSON</div>
             <ol>
-                <li>Gate must pass (Thursday, in season, 08:00–18:00, not already sent today).</li>
+                <li>Gate must pass (Thursday in season, 08:00–23:00, not already <code>success</code> today).</li>
                 <li>Edge CDP must be reachable; script starts Edge if needed.</li>
-                <li>Weather API checks tomorrow 4–8 PM at Lake Hiawatha; cancels on rain or temp outside 65–92 °F.</li>
-                <li>WhatsApp Web must be logged in in the <code>C:\edge-cdp</code> profile.</li>
-                <li>On success, stamp file prevents a second send the same day (wake + unlock + 8 AM won't duplicate).</li>
+                <li>Thursday: weather checks <strong>tomorrow</strong> 4–8 PM; rain/temp cancel OR poll.</li>
+                <li>WhatsApp Web must finish loading chats (up to 300s + 25s settle when scheduled).</li>
+                <li>On success, status JSON stops further hourly retries that Thursday.</li>
             </ol>
         </div>
 
@@ -629,10 +720,41 @@ run_whatsapp_poll_scheduled.bat
                         <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code></td>
                         <td>No</td>
                         <td>Always <code>SEND=1</code></td>
-                        <td>Fixed <code>Volleyball Friday</code> — no prompts</td>
+                        <td>Fixed <code>Volleyball Friday</code></td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_turnout_check.bat</code></td>
+                        <td>Yes — prompts</td>
+                        <td>You choose</td>
+                        <td>Default Volleyball Friday</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">run_whatsapp_low_turnout_cancel.bat</code></td>
+                        <td>Yes</td>
+                        <td>You choose</td>
+                        <td>Sends cancel without reading poll</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dashboard → Volleyball Low Turnout</strong></td>
+                        <td>GUI: check poll or force cancel</td>
+                        <td>Your choice</td>
+                        <td>Launches turnout .bat files</td>
                     </tr>
                 </tbody>
             </table>
+        </div>
+
+        <h2 id="logs">Logs &amp; status viewer</h2>
+        <div class="section-container">
+            <div class="section-header">📋 Run logs</div>
+            <ul>
+                <li><code>logs/whatsapp_poll_YYYYMMDD.log</code> — Thursday scheduled runs</li>
+                <li><code>logs/whatsapp_turnout_YYYYMMDD.log</code> — Friday turnout runs</li>
+                <li><code>logs/index.html</code> — auto-generated viewer (refreshes every 60s)</li>
+            </ul>
+            <p>Open via <code class="script-name">view_logs.bat</code> or read
+            <a href="whatsapp_poll_logs.html">whatsapp_poll_logs.html</a>.</p>
+            <p>Logs rotate automatically — files older than <strong>14 days</strong> are deleted (<code>log_rotate.py</code>).</p>
         </div>
 
         <h2 id="commands">Useful commands</h2>
@@ -732,15 +854,23 @@ run_whatsapp_poll_scheduled.bat
         </div>
         <div class="warning">
             <strong>Scheduled run does nothing</strong>
-            <p>Check <code>logs/whatsapp_poll_*.log</code> for <code>skip:</code> lines (wrong weekday, outside season, outside 08–18, or already ran). Gate exits 0 on skip — that is normal.</p>
+            <p>Check <code>logs/whatsapp_poll_*.log</code> for <code>skip:</code> lines (wrong weekday, outside season, outside 08–23, or <code>already succeeded today</code>). Gate exits 0 on skip — that is normal.</p>
+        </div>
+        <div class="warning">
+            <strong>Log stops at <code>[ok] Edge CDP is up.</code> with no <code>[wapoll]</code> lines</strong>
+            <p>Incomplete run — Python step did not finish. Hourly retry should pick it up. Avoid using the mouse in Edge during scheduled runs. See <a href="whatsapp_poll_logs.html">logs guide</a>.</p>
+        </div>
+        <div class="warning">
+            <strong>WhatsApp slow to load chats</strong>
+            <p>Scheduled mode waits up to <strong>300s</strong> plus a <strong>25s</strong> settle after the chat list appears. Keep Edge (<code>C:\edge-cdp</code>) logged in and unlocked.</p>
         </div>
         <div class="warning">
             <strong>Machine asleep / locked</strong>
-            <p>Task runs in your interactive session. Unlock Windows after wake; the <strong>session unlock</strong> trigger covers late-morning wake-ups on Thursday.</p>
+            <p>Task runs in your interactive session. Unlock Windows after wake; <code>StartWhenAvailable</code> runs missed hourly slots when the PC comes back.</p>
         </div>
         <div class="info">
-            <strong>Reset “already ran today”</strong>
-            <p class="tight-top">Delete <code>%LOCALAPPDATA%\tasks_automation\whatsapp_poll_last_run.txt</code> to allow another send the same day (testing only).</p>
+            <strong>Reset status for testing</strong>
+            <p class="tight-top">Delete <code>%LOCALAPPDATA%\tasks_automation\whatsapp_poll_status.json</code> and <code>whatsapp_poll_last_run.txt</code> to allow another Thursday send the same day.</p>
         </div>
 
         <h2 id="env-vars">Environment variables</h2>
@@ -751,16 +881,36 @@ run_whatsapp_poll_scheduled.bat
                 <ul>
                     <li><code>SEASON_START_MONTH</code>, <code>SEASON_START_DAY</code>, <code>SEASON_END_MONTH</code>, <code>SEASON_END_DAY</code></li>
                     <li><code>SCHEDULE_WEEKDAY</code> — default <code>3</code> (Thursday)</li>
-                    <li><code>SCHEDULE_START_HOUR</code>, <code>SCHEDULE_END_HOUR</code> — default 8 and 18</li>
-                    <li><code>WHATSAPP_POLL_STAMP</code> — path to once-per-day stamp file</li>
+                    <li><code>SCHEDULE_START_HOUR</code>, <code>SCHEDULE_END_HOUR</code> — default 8 and <strong>23</strong></li>
+                    <li><code>WHATSAPP_POLL_STAMP</code> — legacy success date file</li>
+                    <li><code>WHATSAPP_POLL_STATUS</code> — path to status JSON</li>
                 </ul>
-                <p><strong>Poll / weather (<code class="script-name">whatsapp_poll.py</code>):</strong></p>
+                <p><strong>Turnout gate (<code class="script-name">schedule_gate_turnout.py</code>):</strong></p>
                 <ul>
-                    <li><code>CONTACT</code>, <code>SEND</code>, <code>CANCEL_MSG</code>, <code>TEMP_CANCEL_MSG</code></li>
+                    <li><code>TURNOUT_WEEKDAY</code> — default <code>4</code> (Friday)</li>
+                    <li><code>TURNOUT_RUN_HOURS</code> — default <code>15,16</code> (3 PM and 4 PM)</li>
+                </ul>
+                <p><strong>Poll / weather / turnout (<code class="script-name">whatsapp_poll.py</code>):</strong></p>
+                <ul>
+                    <li><code>CONTACT</code>, <code>SEND</code>, <code>ACTION</code> (<code>poll</code>, <code>check_turnout</code>, <code>send_low_turnout_cancel</code>)</li>
+                    <li><code>CANCEL_MSG</code>, <code>TEMP_CANCEL_MSG</code>, <code>LOW_TURNOUT_MSG</code></li>
+                    <li><code>MIN_PLAYERS</code> — default <strong>6</strong> Yes votes required</li>
+                    <li><code>SCHEDULED=1</code> — longer WhatsApp load timeouts</li>
+                    <li><code>SESSION_TIMEOUT_SEC</code>, <code>POST_READY_SETTLE_SEC</code>, <code>PRE_SEARCH_SETTLE_SEC</code></li>
                     <li><code>WEATHER_LAT</code>, <code>WEATHER_LON</code>, <code>TEMP_MIN_F</code>, <code>TEMP_MAX_F</code></li>
                     <li><code>SKIP_WEATHER=1</code> — bypass weather check</li>
                 </ul>
             </div>
+        </div>
+
+        <h2 id="related-docs">Related documentation</h2>
+        <div class="section-container">
+            <div class="section-header">📚 More guides</div>
+            <ul>
+                <li><a href="whatsapp_poll_friday_turnout.html">Friday turnout check</a> — 3 PM / 4 PM, poll vote reading, low-turnout message</li>
+                <li><a href="whatsapp_poll_logs.html">Logs &amp; troubleshooting</a> — viewer, rotation, status badges</li>
+                <li><code>documentation/Daily_Tasks_Implementation_Guide.html</code> — dashboard buttons, PyInstaller, desktop shortcut</li>
+            </ul>
         </div>
     </main>
 

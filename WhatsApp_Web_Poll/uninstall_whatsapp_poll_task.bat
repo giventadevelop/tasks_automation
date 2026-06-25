@@ -1,14 +1,13 @@
 @echo off
 setlocal
-set "TASK_NAME=WhatsApp Volleyball Poll (Thursday)"
-schtasks /query /tn "%TASK_NAME%" >nul 2>&1
-if not errorlevel 1 (
-    schtasks /delete /tn "%TASK_NAME%" /f
-    echo Removed: %TASK_NAME%
-)
-schtasks /query /tn "WhatsApp Volleyball Poll (Thursday logon)" >nul 2>&1
-if not errorlevel 1 (
-    schtasks /delete /tn "WhatsApp Volleyball Poll (Thursday logon)" /f
-    echo Removed: WhatsApp Volleyball Poll (Thursday logon)
+set "TASK_POLL=WhatsApp Volleyball Poll (Thursday)"
+set "TASK_TURNOUT_3=WhatsApp Volleyball Turnout (Friday) 3PM"
+set "TASK_TURNOUT_4=WhatsApp Volleyball Turnout (Friday) 4PM"
+for %%T in ("%TASK_POLL%" "%TASK_TURNOUT_3%" "%TASK_TURNOUT_4%" "WhatsApp Volleyball Poll (Thursday logon)" "WhatsApp Volleyball Turnout (Friday)") do (
+    schtasks /query /tn %%~T >nul 2>&1
+    if not errorlevel 1 (
+        schtasks /delete /tn %%~T /f
+        echo Removed: %%~T
+    )
 )
 if not defined TASK_NAME_ONLY pause

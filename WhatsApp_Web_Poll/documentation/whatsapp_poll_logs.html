@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Poll — Logs &amp; Troubleshooting</title>
+    <style>
+        body {
+            max-width: 1000px; margin: 0 auto; padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6; color: #333;
+        }
+        h1 { border-bottom: 3px solid #128C7E; padding-bottom: 0.3em; }
+        h2 { border-left: 4px solid #128C7E; padding-left: 12px; margin-top: 1.5em; }
+        .box {
+            background: linear-gradient(135deg, #e8f8f4 0%, #d4f0e8 100%);
+            border-left: 4px solid #128C7E; border-radius: 8px;
+            padding: 16px 20px; margin: 16px 0;
+        }
+        .warn {
+            background: linear-gradient(135deg, #fff8e6 0%, #ffefcc 100%);
+            border-left: 4px solid #e67e22;
+        }
+        code {
+            background: #eef6f3; padding: 2px 6px; border-radius: 3px;
+            font-family: Consolas, 'Courier New', monospace;
+        }
+        pre {
+            background: #1e1e1e; color: #d4d4d4; padding: 14px;
+            border-radius: 6px; overflow-x: auto; font-size: 13px;
+        }
+        a { color: #128C7E; font-weight: 600; }
+        table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+        th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; }
+        th { background: #128C7E; color: #fff; }
+        .msg-box {
+            background: #f9f9f9; border: 1px solid #ddd; padding: 12px;
+            border-radius: 6px; white-space: pre-wrap; font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp Poll — Logs &amp; Troubleshooting</h1>
+
+    <div class="box">
+        <strong>Live log viewer:</strong>
+        <a href="../logs/index.html">Open logs/index.html</a>
+        (regenerated after each scheduled run; auto-refreshes every 60s)
+        <br><br>
+        <strong>Quick open (Windows):</strong>
+        <code>WhatsApp_Web_Poll\view_logs.bat</code>
+        <br><br>
+        <strong>Schedule guides:</strong>
+        <a href="whatsapp_poll_thursday_schedule.html">Thursday poll + weekly overview</a> ·
+        <a href="whatsapp_poll_friday_turnout.html">Friday turnout (3 PM / 4 PM)</a>
+    </div>
+
+    <h2>Log files</h2>
+    <table>
+        <tr><th>File pattern</th><th>Source</th></tr>
+        <tr><td><code>logs/whatsapp_poll_YYYYMMDD.log</code></td><td>Thursday scheduled poll (<code>run_whatsapp_poll_scheduled.bat</code>)</td></tr>
+        <tr><td><code>logs/whatsapp_turnout_YYYYMMDD.log</code></td><td>Friday turnout check (3 PM / 4 PM)</td></tr>
+        <tr><td><code>logs/index.html</code></td><td>Generated viewer (<code>generate_log_viewer.py</code>)</td></tr>
+    </table>
+
+    <h2>Rotation</h2>
+    <p>Logs older than <strong>14 days</strong> are deleted at the start of each scheduled run (<code>log_rotate.py</code>). Override with <code>LOG_KEEP_DAYS=30</code>.</p>
+
+    <h2>Success &amp; status tracking</h2>
+    <p>Runs track <strong>success vs failed</strong> (not just “ran today”). Failed runs allow hourly Thursday retries until 11 PM.</p>
+    <table>
+        <tr><th>File</th><th>Purpose</th></tr>
+        <tr><td><code>whatsapp_poll_status.json</code></td><td>Thursday poll: <code>success</code> | <code>failed</code> | <code>pending</code>, attempt count, detail</td></tr>
+        <tr><td><code>whatsapp_turnout_status.json</code></td><td>Friday turnout check status</td></tr>
+        <tr><td><code>whatsapp_poll_last_run.txt</code></td><td>Legacy date stamp (updated on poll success)</td></tr>
+        <tr><td><code>whatsapp_turnout_last_run.txt</code></td><td>Legacy date stamp (updated on turnout success)</td></tr>
+    </table>
+    <p>All under <code>%LOCALAPPDATA%\tasks_automation\</code></p>
+    <pre>py -3 schedule_gate.py --status
+py -3 schedule_gate_turnout.py --status</pre>
+
+    <h2>Weekly retry schedule</h2>
+    <table>
+        <tr><th>Day</th><th>Schedule</th><th>Behavior</th></tr>
+        <tr><td>Thursday</td><td>8 AM – 11 PM hourly</td><td>Send poll (or weather cancel); retry each hour until <strong>success</strong> or 11 PM</td></tr>
+        <tr><td>Friday</td><td>3 PM and 4 PM</td><td>Read latest poll; if Yes &lt; 6 and weather OK → send low-turnout cancel</td></tr>
+    </table>
+
+    <h2>Low-turnout message (Friday)</h2>
+    <div class="msg-box">Today's volleyball game CANCELED : Not enough people
+
+Hey folks, today's volleyball game at the park's off—doesn't look like we've got enough people. No worries, we'll aim for next week. Catch you then!</div>
+    <p>Sent only when <code>Yes &lt; MIN_PLAYERS</code> (default 6) and today's weather is playable. See <a href="whatsapp_poll_friday_turnout.html">Friday turnout guide</a>.</p>
+
+    <h2>Dashboard buttons</h2>
+    <table>
+        <tr><th>Button</th><th>Action</th></tr>
+        <tr><td><strong>WhatsApp Poll</strong></td><td>Manual Thursday-style poll (contact + send/dry-run)</td></tr>
+        <tr><td><strong>Volleyball Low Turnout</strong></td><td>Check latest poll (&lt; 6 Yes → cancel) or send cancel message now</td></tr>
+    </table>
+
+    <h2>Scheduled load delays</h2>
+    <p>When <code>SCHEDULED=1</code>, the script waits longer for WhatsApp Web to finish loading chats:</p>
+    <ul>
+        <li><strong>300s</strong> session timeout</li>
+        <li><strong>25s</strong> settle after chat list appears</li>
+        <li><strong>5s</strong> pause before contact search</li>
+        <li><strong>10s</strong> Edge warmup in batch before Python starts</li>
+        <li>Requires at least <strong>3</strong> visible chat rows</li>
+    </ul>
+    <p>Avoid using the mouse in Edge (<code>C:\edge-cdp</code>) during scheduled runs.</p>
+
+    <div class="box warn">
+        <strong>Incomplete run pattern</strong><br>
+        If the log stops after <code>[ok] Edge CDP is up.</code> with no <code>[wapoll]</code> lines, the Python step did not complete.
+        Thursday hourly retry should try again; check status JSON and <code>view_logs.bat</code>.
+    </div>
+
+    <h2>Status badges in viewer</h2>
+    <table>
+        <tr><th>Badge</th><th>Meaning</th></tr>
+        <tr><td>success</td><td>Poll/message sent or DONE exit=0</td></tr>
+        <tr><td>incomplete</td><td>Gate passed but no <code>[wapoll]</code> output</td></tr>
+        <tr><td>failed</td><td>Timeout, FAIL, or non-zero exit</td></tr>
+        <tr><td>skipped</td><td>Wrong day/time/season or already succeeded today</td></tr>
+    </table>
+
+    <h2>Manual re-run</h2>
+    <pre>schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"
+schtasks /run /tn "WhatsApp Volleyball Turnout (Friday) 3PM"
+WhatsApp_Web_Poll\run_whatsapp_poll.bat
+WhatsApp_Web_Poll\run_whatsapp_turnout_check.bat</pre>
+
+    <p><a href="whatsapp_poll_thursday_schedule.html">← Weekly schedule guide</a></p>
+</body>
+</html>

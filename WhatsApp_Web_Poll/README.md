@@ -104,26 +104,31 @@ can wire that up later if you want it always-on.
 - **First load can be slow** (60s timeout for the sidebar to appear) if
   your WhatsApp Web hasn't finished syncing since last open.
 
-## Scheduled runs (every Thursday)
+## Scheduled runs (Thursday poll + Friday turnout)
 
-To run automatically on **Thursdays** in volleyball season (**May 12 – Oct 30**),
-between **08:00–18:00** local, including when the PC **wakes from sleep** or you
-**unlock** Windows that day:
+**HTML documentation (full detail):**
+- `documentation/whatsapp_poll_thursday_schedule.html` — Thursday poll, hourly retries until 11 PM
+- `documentation/whatsapp_poll_friday_turnout.html` — Friday 3 PM / 4 PM turnout check
+- `documentation/whatsapp_poll_logs.html` — logs, status JSON, troubleshooting
+
+To run automatically:
 
 1. One-time: sign in to WhatsApp Web in Edge (`C:\edge-cdp` profile).
-2. Double-click **`install_whatsapp_poll_task.bat`** (creates a Windows Task Scheduler job).
-3. Logs go to `WhatsApp_Web_Poll/logs/`.
+2. Double-click **`install_whatsapp_poll_task.bat`** (Thursday hourly + Friday 3/4 PM tasks).
+3. Logs: `view_logs.bat` or `logs/index.html`.
 
-The scheduled runner (`run_whatsapp_poll_scheduled.bat`) sends for real (`SEND=1`)
-to **Gain Joseph** with no prompts. It runs at most **once per day** (stamp file in
-`%LOCALAPPDATA%\tasks_automation\`).
+| Day | Schedule | Behavior |
+|-----|----------|----------|
+| Thursday | 8 AM – 11 PM hourly | Poll or weather cancel; **retries until success** |
+| Friday | 3 PM + 4 PM retry | Read poll; if Yes &lt; 6 and weather OK → low-turnout cancel |
+
+Status files: `%LOCALAPPDATA%\tasks_automation\whatsapp_poll_status.json` and `whatsapp_turnout_status.json`.
 
 **Test:** `schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"`
 
 **Remove:** `uninstall_whatsapp_poll_task.bat`
 
-Override schedule window via env: `SCHEDULE_START_HOUR`, `SCHEDULE_END_HOUR`,
-`SEASON_START_MONTH`, etc. (same names as `schedule_gate.py`).
+Override schedule via env: `SCHEDULE_END_HOUR` (default 23), `MIN_PLAYERS` (default 6), etc.
 
 ## Non-goals
 

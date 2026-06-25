@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Friday volleyball turnout check — read WhatsApp poll votes, weather gate, low-turnout cancel at 3 PM and 4 PM retry.">
+    <title>WhatsApp Volleyball — Friday Turnout Check</title>
+    <style>
+        body {
+            max-width: 1100px; margin: 0 auto; padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6; color: #333;
+        }
+        h1 { font-size: 2.2em; border-bottom: 3px solid #0B6E4F; padding-bottom: 0.3em; }
+        h2 { font-size: 1.5em; border-left: 4px solid #0B6E4F; padding-left: 12px; margin-top: 1.5em; }
+        .intro, .section {
+            background: linear-gradient(135deg, #e8f8f4 0%, #d4f0e8 100%);
+            border-left: 4px solid #0B6E4F; border-radius: 8px;
+            padding: 16px 20px; margin: 16px 0;
+        }
+        .warn {
+            background: linear-gradient(135deg, #fff8e6 0%, #ffefcc 100%);
+            border-left: 4px solid #e67e22; padding: 14px 18px; margin: 14px 0; border-radius: 4px;
+        }
+        .msg-box {
+            background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 6px;
+            white-space: pre-wrap; font-size: 14px; margin: 12px 0;
+        }
+        code {
+            background: #eef6f3; padding: 2px 6px; border-radius: 3px;
+            font-family: Consolas, 'Courier New', monospace;
+        }
+        pre {
+            background: #1e1e1e; color: #d4d4d4; padding: 14px;
+            border-radius: 6px; overflow-x: auto; font-size: 13px;
+        }
+        table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+        th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; }
+        th { background: #0B6E4F; color: #fff; }
+        a { color: #0B6E4F; font-weight: 600; }
+        .flow {
+            background: #f4f4f4; border: 1px solid #ddd; border-radius: 6px;
+            padding: 14px; font-family: Consolas, monospace; font-size: 13px;
+            white-space: pre-wrap; margin: 12px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Friday Turnout Check — Low Player Cancellation</h1>
+
+    <div class="intro">
+        <p>
+            On <strong>Friday game day</strong>, this automation opens the <strong>Volleyball Friday</strong> WhatsApp group,
+            finds the <strong>latest volleyball poll</strong>, counts <strong>Yes</strong> votes, and decides whether to send a
+            low-turnout cancellation message.
+        </p>
+        <p>
+            <a href="whatsapp_poll_thursday_schedule.html">← Thursday poll schedule</a> ·
+            <a href="whatsapp_poll_logs.html">Logs &amp; troubleshooting</a>
+        </p>
+    </div>
+
+    <h2>Schedule</h2>
+    <table>
+        <tr><th>When</th><th>Task name</th><th>Purpose</th></tr>
+        <tr><td>Friday <strong>3:00 PM</strong></td><td><code>WhatsApp Volleyball Turnout (Friday) 3PM</code></td><td>Primary turnout check</td></tr>
+        <tr><td>Friday <strong>4:00 PM</strong></td><td><code>WhatsApp Volleyball Turnout (Friday) 4PM</code></td><td>Retry if 3 PM failed or PC was off (<code>StartWhenAvailable</code>)</td></tr>
+    </table>
+    <p>Season gate: <strong>May 12 – Oct 30</strong> (same as Thursday poll). Installed by <code>install_whatsapp_poll_task.bat</code>.</p>
+
+    <h2>Decision logic</h2>
+    <div class="flow">1. schedule_gate_turnout.py — Friday? in season? 3 or 4 PM? not already success today?
+2. weather_check_today() — today's 4–8 PM at Lake Hiawatha
+   → if RAIN or temp out of range: skip low-turnout message (game already off / weather cancel)
+3. Open Volleyball Friday chat, scroll to latest poll
+4. Read Yes / No vote counts
+   → if Yes ≥ 6: done, no message
+   → if Yes &lt; 6 AND weather OK: send LOW_TURNOUT_MSG
+5. Mark success or failed in whatsapp_turnout_status.json</div>
+
+    <h2>Vote threshold</h2>
+    <p>Default <code>MIN_PLAYERS=6</code>. The poll must show at least <strong>6 Yes votes</strong> to play. Example: Yes=4, No=5 → cancel message is sent (if weather is fine).</p>
+
+    <h2>Low-turnout message (default)</h2>
+    <div class="msg-box">Today's volleyball game CANCELED : Not enough people
+
+Hey folks, today's volleyball game at the park's off—doesn't look like we've got enough people. No worries, we'll aim for next week. Catch you then!</div>
+    <p>Override with env <code>LOW_TURNOUT_MSG</code>.</p>
+
+    <h2>Weather on Friday</h2>
+    <p>
+        Unlike Thursday (which checks <strong>tomorrow</strong> for the poll), Friday turnout checks
+        <strong>today's</strong> 4–8 PM forecast. If weather would cancel the game (rain ≥50% PoP or temp outside 65–92°F),
+        the low-turnout message is <strong>not</strong> sent — players should already know from Thursday's weather cancel or conditions.
+    </p>
+
+    <h2>Manual &amp; dashboard runs</h2>
+    <table>
+        <tr><th>Method</th><th>Script / button</th></tr>
+        <tr><td>Batch (interactive)</td><td><code>run_whatsapp_turnout_check.bat</code> — reads poll, sends if &lt; 6 Yes</td></tr>
+        <tr><td>Batch (force cancel)</td><td><code>run_whatsapp_low_turnout_cancel.bat</code> — sends message without reading poll</td></tr>
+        <tr><td>Dashboard</td><td><strong>Volleyball Low Turnout</strong> — choose “check poll” or “send cancel now”</td></tr>
+        <tr><td>Scheduled</td><td><code>run_whatsapp_turnout_check_scheduled.bat</code></td></tr>
+    </table>
+
+    <h2>Status tracking</h2>
+    <p>Success/failure stored in:</p>
+    <pre>%LOCALAPPDATA%\tasks_automation\whatsapp_turnout_status.json</pre>
+    <p>Check: <code>py -3 schedule_gate_turnout.py --status</code></p>
+    <p>After <code>success</code> on Friday, the 4 PM slot skips (unless 3 PM failed and 4 PM is the retry).</p>
+
+    <h2>Commands</h2>
+    <pre>schtasks /run /tn "WhatsApp Volleyball Turnout (Friday) 3PM"
+schtasks /run /tn "WhatsApp Volleyball Turnout (Friday) 4PM"
+py -3 schedule_gate_turnout.py
+WhatsApp_Web_Poll\run_whatsapp_turnout_check.bat
+WhatsApp_Web_Poll\view_logs.bat</pre>
+
+    <div class="warn">
+        <strong>During scheduled runs</strong>, avoid clicking in the Edge CDP window (<code>C:\edge-cdp</code>) until the script finishes.
+        WhatsApp needs time to load all chats before searching the group.
+    </div>
+
+    <h2>Environment variables</h2>
+    <ul>
+        <li><code>MIN_PLAYERS</code> — default 6</li>
+        <li><code>LOW_TURNOUT_MSG</code> — cancellation text</li>
+        <li><code>ACTION=check_turnout</code> — set by turnout scripts</li>
+        <li><code>TURNOUT_RUN_HOURS=15,16</code> — gate hours (3 PM, 4 PM)</li>
+        <li><code>SKIP_WEATHER=1</code> — skip Friday weather pre-check</li>
+    </ul>
+</body>
+</html>

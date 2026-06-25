@@ -1,66 +1,113 @@
-# Install Windows Task Scheduler job for Thursday WhatsApp volleyball poll.
-# Uses schtasks (weekly) + StartWhenAvailable (catches wake at 10-11 AM if 8 AM missed).
+# Install Windows Task Scheduler jobs for WhatsApp volleyball automation.
+# Thursday poll: hourly 08:00-23:00 (retries until success or 11 PM)
+# Friday turnout: 15:00 and 16:00 (3 PM + 4 PM retry)
 param(
-    [string]$TaskName = "WhatsApp Volleyball Poll (Thursday)"
+    [string]$PollTaskName = "WhatsApp Volleyball Poll (Thursday)",
+    [string]$TurnoutTaskName = "WhatsApp Volleyball Turnout (Friday)"
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RunBat = Join-Path $ScriptDir "run_whatsapp_poll_scheduled.bat"
+$PollBat = Join-Path $ScriptDir "run_whatsapp_poll_scheduled.bat"
+$TurnoutBat = Join-Path $ScriptDir "run_whatsapp_turnout_check_scheduled.bat"
 $GatePy = Join-Path $ScriptDir "schedule_gate.py"
 
-if (-not (Test-Path $RunBat)) {
-    Write-Error "Missing $RunBat"
-    exit 1
-}
-
-$userId = $env:USERNAME
-Write-Host "Installing for user: $userId"
-Write-Host "Script: $RunBat"
-
-schtasks /delete /tn $TaskName /f 2>$null | Out-Null
-
-$create = schtasks /create /tn $TaskName /tr $RunBat /sc weekly /d THU /st 08:00 /f 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "schtasks failed: $create"
-    exit 1
-}
-Write-Host "[ok] Weekly trigger: Thursday 08:00"
-
-try {
-    $settings = New-ScheduledTaskSettingsSet `
-        -StartWhenAvailable `
-        -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries `
-        -MultipleInstances IgnoreNew `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
-    Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
-    Write-Host "[ok] StartWhenAvailable=ON - if PC wakes at 10-11 AM on Thursday (missed 8 AM), Task Scheduler should run automatically."
-    Write-Host "     (You must be logged in; unlock Windows after sleep.)"
-} catch {
-    Write-Host "[warn] Could not update task settings: $_"
-}
-
-try {
-    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
-    $unlockClass = Get-CimClass -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_TaskSessionStateChangeTrigger
-    $unlock = New-CimInstance -CimClass $unlockClass -ClientOnly -Property @{
-        Enabled     = $true
-        StateChange = 8
+function Set-TaskSettings($Name) {
+    try {
+        $settings = New-ScheduledTaskSettingsSet `
+            -StartWhenAvailable `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -MultipleInstances Queue `
+            -ExecutionTimeLimit (New-TimeSpan -Minutes 45)
+        Set-ScheduledTask -TaskName $Name -Settings $settings | Out-Null
+        return $true
+    } catch {
+        Write-Host "[warn] Could not update settings for ${Name}: $_"
+        return $false
     }
-    $newTriggers = @($task.Triggers) + @($unlock)
-    Set-ScheduledTask -TaskName $TaskName -Trigger $newTriggers | Out-Null
-    Write-Host "[ok] Added session-unlock trigger."
-} catch {
-    Write-Host "[warn] Unlock trigger not added (StartWhenAvailable still covers most wake-ups)."
 }
 
-$info = Get-ScheduledTaskInfo -TaskName $TaskName
+function Set-TaskStopExistingPolicy($Name) {
+    # PowerShell ScheduledTask cmdlets lack StopExisting; patch via task XML.
+    $tmp = Join-Path $env:TEMP "tasks_automation_$([guid]::NewGuid().ToString('N')).xml"
+    try {
+        schtasks /query /tn $Name /xml | Out-File -FilePath $tmp -Encoding Unicode
+        $raw = Get-Content $tmp -Raw -Encoding Unicode
+        if ($raw -match '<MultipleInstancesPolicy>') {
+            $raw = $raw -replace '<MultipleInstancesPolicy>[^<]+</MultipleInstancesPolicy>',
+                '<MultipleInstancesPolicy>StopExisting</MultipleInstancesPolicy>'
+        } else {
+            $raw = $raw -replace '<Settings>',
+                "<Settings>`r`n    <MultipleInstancesPolicy>StopExisting</MultipleInstancesPolicy>"
+        }
+        Set-Content -Path $tmp -Value $raw -Encoding Unicode
+        schtasks /delete /tn $Name /f 2>&1 | Out-Null
+        $create = schtasks /create /tn $Name /xml $tmp /f 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[warn] StopExisting XML patch failed for ${Name}: $create"
+            return $false
+        }
+        Write-Host "[ok] ${Name}: MultipleInstancesPolicy=StopExisting (hourly retries replace stuck runs)"
+        return $true
+    } catch {
+        Write-Host "[warn] StopExisting policy for ${Name}: $_"
+        return $false
+    } finally {
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "Installing for user: $env:USERNAME"
+Write-Host "Script dir: $ScriptDir"
+
+# ---- Thursday poll (hourly 8 AM - 11 PM) ----
+schtasks /delete /tn $PollTaskName /f 2>&1 | Out-Null
+$pollCreate = cmd /c "schtasks /create /tn `"$PollTaskName`" /tr `"$PollBat`" /sc weekly /d THU /st 08:00 /ri 60 /du 15:00 /f" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Thursday poll task failed: $pollCreate"
+    exit 1
+}
+Write-Host "[ok] Thursday poll: weekly, 08:00 + hourly until 23:00 (retries if failed)"
+Set-TaskSettings $PollTaskName | Out-Null
+Set-TaskStopExistingPolicy $PollTaskName | Out-Null
+
+# ---- Friday turnout (3 PM + 4 PM retry) ----
+if (Test-Path $TurnoutBat) {
+    $turnoutSlots = @(
+        @{ Name = "${TurnoutTaskName} 3PM"; Time = "15:00" },
+        @{ Name = "${TurnoutTaskName} 4PM"; Time = "16:00" }
+    )
+    foreach ($slot in $turnoutSlots) {
+        try { schtasks /delete /tn $slot.Name /f 2>&1 | Out-Null } catch { }
+        $turnoutCreate = cmd /c "schtasks /create /tn `"$($slot.Name)`" /tr `"$TurnoutBat`" /sc weekly /d FRI /st $($slot.Time) /f" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[warn] $($slot.Name) failed: $turnoutCreate"
+        } else {
+            Write-Host "[ok] $($slot.Name): weekly Friday $($slot.Time)"
+            Set-TaskSettings $slot.Name | Out-Null
+        }
+    }
+} else {
+    Write-Host "[warn] Missing $TurnoutBat — Friday turnout task not installed"
+}
+
+$pollInfo = Get-ScheduledTaskInfo -TaskName $PollTaskName
 Write-Host ""
-Write-Host "[ok] Task installed: $TaskName"
-Write-Host "  Next scheduled: $($info.NextRunTime)"
-Write-Host ('  Test: schtasks /run /tn "' + $TaskName + '"')
-Write-Host "  Logs: $(Join-Path $ScriptDir 'logs')"
+Write-Host "[ok] Installed tasks"
+Write-Host "  Poll next run:    $($pollInfo.NextRunTime)"
+try {
+    $t3 = Get-ScheduledTaskInfo -TaskName "${TurnoutTaskName} 3PM"
+    Write-Host "  Turnout 3PM next: $($t3.NextRunTime)"
+    $t4 = Get-ScheduledTaskInfo -TaskName "${TurnoutTaskName} 4PM"
+    Write-Host "  Turnout 4PM next: $($t4.NextRunTime)"
+} catch { }
+
+Write-Host ""
+Write-Host "Status files: $env:LOCALAPPDATA\tasks_automation\whatsapp_poll_status.json"
+Write-Host "Logs viewer:  $(Join-Path $ScriptDir 'view_logs.bat')"
+Write-Host "Test poll:    schtasks /run /tn `"$PollTaskName`""
+Write-Host "Test turnout: schtasks /run /tn `"$TurnoutTaskName`""
 
 $runNow = $false
 if (Test-Path $GatePy) {
@@ -72,15 +119,8 @@ if (Test-Path $GatePy) {
 }
 if ($runNow) {
     Write-Host ""
-    Write-Host "[..] Today qualifies - starting poll now (not waiting for next week)..."
-    schtasks /run /tn $TaskName | Out-Null
-    Start-Sleep -Seconds 2
-    Write-Host "[ok] Triggered. Check Edge and: $(Join-Path $ScriptDir 'logs')"
-} else {
-    Write-Host ""
-    Write-Host "No immediate run (wrong day/time/season or already sent today)."
+    Write-Host "[..] Today qualifies for poll — triggering now..."
+    schtasks /run /tn $PollTaskName | Out-Null
 }
 
-Write-Host ""
-Write-Host ('Install via: powershell -NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"')
 exit 0
