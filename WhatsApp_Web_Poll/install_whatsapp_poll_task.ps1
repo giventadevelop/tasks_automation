@@ -1,6 +1,6 @@
 # Install Windows Task Scheduler jobs for WhatsApp volleyball automation.
 # Thursday poll: hourly 08:00-23:00 (retries until success or 11 PM)
-# Friday turnout: 15:00 and 16:00 (3 PM + 4 PM retry)
+# Friday turnout: every 20 min, 15:00-17:00 (3 PM - 5 PM)
 param(
     [string]$PollTaskName = "WhatsApp Volleyball Poll (Thursday)",
     [string]$TurnoutTaskName = "WhatsApp Volleyball Turnout (Friday)"
@@ -72,21 +72,24 @@ Write-Host "[ok] Thursday poll: weekly, 08:00 + hourly until 23:00 (retries if f
 Set-TaskSettings $PollTaskName | Out-Null
 Set-TaskStopExistingPolicy $PollTaskName | Out-Null
 
-# ---- Friday turnout (3 PM + 4 PM retry) ----
+# ---- Friday turnout (every 20 min, 3 PM - 5 PM) ----
 if (Test-Path $TurnoutBat) {
-    $turnoutSlots = @(
-        @{ Name = "${TurnoutTaskName} 3PM"; Time = "15:00" },
-        @{ Name = "${TurnoutTaskName} 4PM"; Time = "16:00" }
-    )
-    foreach ($slot in $turnoutSlots) {
-        try { schtasks /delete /tn $slot.Name /f 2>&1 | Out-Null } catch { }
-        $turnoutCreate = cmd /c "schtasks /create /tn `"$($slot.Name)`" /tr `"$TurnoutBat`" /sc weekly /d FRI /st $($slot.Time) /f" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[warn] $($slot.Name) failed: $turnoutCreate"
-        } else {
-            Write-Host "[ok] $($slot.Name): weekly Friday $($slot.Time)"
-            Set-TaskSettings $slot.Name | Out-Null
-        }
+    foreach ($legacy in @(
+        "${TurnoutTaskName} 3PM",
+        "${TurnoutTaskName} 4PM",
+        "${TurnoutTaskName} 5PM"
+    )) {
+        try { schtasks /delete /tn $legacy /f 2>&1 | Out-Null } catch { }
+    }
+    try { schtasks /delete /tn $TurnoutTaskName /f 2>&1 | Out-Null } catch { }
+
+    $turnoutCreate = cmd /c "schtasks /create /tn `"$TurnoutTaskName`" /tr `"$TurnoutBat`" /sc weekly /d FRI /st 15:00 /ri 20 /du 02:00 /f" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[warn] Friday turnout task failed: $turnoutCreate"
+    } else {
+        Write-Host "[ok] $TurnoutTaskName`: weekly Friday 15:00 + every 20 min until 17:00"
+        Set-TaskSettings $TurnoutTaskName | Out-Null
+        Set-TaskStopExistingPolicy $TurnoutTaskName | Out-Null
     }
 } else {
     Write-Host "[warn] Missing $TurnoutBat — Friday turnout task not installed"
@@ -97,10 +100,8 @@ Write-Host ""
 Write-Host "[ok] Installed tasks"
 Write-Host "  Poll next run:    $($pollInfo.NextRunTime)"
 try {
-    $t3 = Get-ScheduledTaskInfo -TaskName "${TurnoutTaskName} 3PM"
-    Write-Host "  Turnout 3PM next: $($t3.NextRunTime)"
-    $t4 = Get-ScheduledTaskInfo -TaskName "${TurnoutTaskName} 4PM"
-    Write-Host "  Turnout 4PM next: $($t4.NextRunTime)"
+    $tTurnout = Get-ScheduledTaskInfo -TaskName $TurnoutTaskName
+    Write-Host "  Turnout next:     $($tTurnout.NextRunTime)"
 } catch { }
 
 Write-Host ""

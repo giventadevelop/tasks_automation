@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-REM Scheduled Friday turnout check at 3 PM / 4 PM retry.
+REM Scheduled Friday turnout: every 20 min from 3 PM until 5 PM.
 cd /d "%~dp0"
 
 set "LOG_DIR=%~dp0logs"
@@ -64,11 +64,10 @@ set RC=!ERRORLEVEL!
 echo [%date% %time%] whatsapp_poll.py exit=!RC!>>"%LOG_FILE%"
 
 if !RC! EQU 0 (
-    %PY% -u "%~dp0schedule_gate_turnout.py" --mark-success "turnout_check_done">>"%LOG_FILE%" 2>&1
-    echo [%date% %time%] DONE exit=!RC! marked success>>"%LOG_FILE%"
+    echo [%date% %time%] DONE exit=!RC! turnout message sent>>"%LOG_FILE%"
 ) else (
     %PY% -u "%~dp0schedule_gate_turnout.py" --mark-failed "exit_!RC!">>"%LOG_FILE%" 2>&1
-    echo [%date% %time%] FAILED exit=!RC! — retry at 4 PM if scheduled>>"%LOG_FILE%"
+    echo [%date% %time%] FAILED exit=!RC! — will retry every 20 min until 5 PM>>"%LOG_FILE%"
 )
 
 %PY% "%~dp0generate_log_viewer.py" >nul 2>&1

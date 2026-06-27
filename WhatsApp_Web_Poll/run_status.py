@@ -69,6 +69,19 @@ def succeeded_today(kind: str) -> bool:
     return bool(rec and rec.get("status") == "success")
 
 
+def message_sent_today(kind: str) -> bool:
+    """True only when a WhatsApp status message was actually sent today."""
+    rec = record_for_today(kind)
+    if not rec or rec.get("status") != "success":
+        return False
+    if rec.get("message_sent") is True:
+        return True
+    if rec.get("message_sent") is False:
+        return False
+    detail = str(rec.get("detail", ""))
+    return detail in ("go_msg", "weather_rain", "weather_temp", "low_turnout")
+
+
 def failed_today(kind: str) -> bool:
     rec = record_for_today(kind)
     return bool(rec and rec.get("status") == "failed")
@@ -79,7 +92,7 @@ def attempts_today(kind: str) -> int:
     return int(rec.get("attempts", 0)) if rec else 0
 
 
-def mark_success(kind: str, detail: str = "") -> None:
+def mark_success(kind: str, detail: str = "", message_sent: bool | None = None) -> None:
     rec = record_for_today(kind) or {"date": today_iso(), "attempts": 0}
     rec.update(
         {
@@ -89,6 +102,8 @@ def mark_success(kind: str, detail: str = "") -> None:
             "detail": detail,
         }
     )
+    if message_sent is not None:
+        rec["message_sent"] = message_sent
     _write(kind, rec)
     legacy = LEGACY_STAMPS.get(kind)
     if legacy:

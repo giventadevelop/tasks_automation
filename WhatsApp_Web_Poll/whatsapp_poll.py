@@ -16,6 +16,7 @@ Env vars:
   POLL_TITLE override the question text
   CANCEL_MSG / TEMP_CANCEL_MSG  cancellation texts for rain / temperature
   LOW_TURNOUT_MSG               not-enough-players cancellation text
+  GO_MSG                        all-clear message when weather + turnout OK (Friday)
   MIN_PLAYERS                   minimum Yes votes (default 6)
   ACTION                        poll (default) | check_turnout | send_low_turnout_cancel
   SEND       "1" to actually click Send; anything else = dry run
@@ -30,6 +31,8 @@ import urllib.request
 import urllib.error
 
 import websocket  # provided by the browser-use venv on this machine
+
+from run_status import mark_success as mark_turnout_success
 
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9222")
@@ -51,10 +54,16 @@ DEFAULT_LOW_TURNOUT_MSG = (
     "Hey folks, today's volleyball game at the park's off—doesn't look like we've got "
     "enough people. No worries, we'll aim for next week. Catch you then!"
 )
+DEFAULT_GO_MSG = (
+    "✅ Everything looks good!\n\n"
+    "Both the weather and the number of people are good for today's volleyball at the park. "
+    "Let's play! See you at Lake Hiawatha — 6:00 PM."
+)
 POLL_TITLE = os.environ.get("POLL_TITLE", DEFAULT_TITLE)
 CANCEL_MSG = os.environ.get("CANCEL_MSG", DEFAULT_CANCEL_MSG)
 TEMP_CANCEL_MSG = os.environ.get("TEMP_CANCEL_MSG", DEFAULT_TEMP_CANCEL_MSG)
 LOW_TURNOUT_MSG = os.environ.get("LOW_TURNOUT_MSG", DEFAULT_LOW_TURNOUT_MSG)
+GO_MSG = os.environ.get("GO_MSG", DEFAULT_GO_MSG)
 MIN_PLAYERS = int(os.environ.get("MIN_PLAYERS", "6"))
 ACTION = os.environ.get("ACTION", "poll").strip().lower()
 POLL_OPTIONS = ["Yes", "No"]
@@ -898,22 +907,52 @@ def read_latest_poll_votes(tab: Tab) -> dict:
     return {"found": False, "error": "read_failed"}
 
 
+def _finish_turnout(detail: str) -> int:
+    mark_turnout_success("turnout", detail=detail, message_sent=True)
+    log(f"turnout complete: message sent ({detail})")
+    return 0
+
+
 def run_turnout_check(tab: Tab) -> int:
-    """Read latest poll; send LOW_TURNOUT_MSG if weather OK and Yes votes < MIN_PLAYERS."""
+    """Friday turnout check: weather for today's game, then poll Yes count.
+
+    Sends the appropriate WhatsApp message when required:
+      - Rain or temperature out of range → weather cancellation message
+      - Weather OK but Yes votes < MIN_PLAYERS → low-turnout cancellation
+      - Weather OK and enough Yes votes → all-clear \"let's play\" message
+    """
+    weather_decision = "proceed"
+    cancel_reason = ""
     if not SKIP_WEATHER:
         try:
             weather_decision, msg, cancel_reason = weather_check_today()
             if msg:
                 for line in msg.splitlines():
                     log(line)
-            if weather_decision == "cancel":
-                log(
-                    f"weather cancelled game today ({cancel_reason}) — "
-                    "not sending low-turnout message"
-                )
-                return 0
         except Exception as exc:
             log(f"weather: check failed ({exc}) — proceeding with turnout read")
+            weather_decision = "proceed"
+
+    if weather_decision == "cancel":
+        cancel_msg = CANCEL_MSG if cancel_reason == "rain" else TEMP_CANCEL_MSG
+        log("=" * 60)
+        if cancel_reason == "temp":
+            log(
+                "TEMP OUT OF RANGE — sending weather cancellation message "
+                "(skipping turnout poll read)"
+            )
+        else:
+            log(
+                "RAINY DAY — sending weather cancellation message "
+                "(skipping turnout poll read)"
+            )
+        log("=" * 60)
+        send_text_message(tab, cancel_msg)
+        detail = "weather_rain" if cancel_reason == "rain" else "weather_temp"
+        return _finish_turnout(detail)
+
+    if weather_decision == "proceed":
+        log("weather OK for today's game window — checking poll turnout")
 
     info = read_latest_poll_votes(tab)
     if not info.get("found"):
@@ -927,15 +966,19 @@ def run_turnout_check(tab: Tab) -> int:
         log(f"poll preview: {preview[:120]}...")
 
     if yes_votes >= MIN_PLAYERS:
-        log(f"enough players ({yes_votes} Yes) — no cancellation message needed")
-        return 0
+        log(
+            f"enough players ({yes_votes} Yes) and weather OK — "
+            "sending all-clear let's-play message"
+        )
+        send_text_message(tab, GO_MSG)
+        return _finish_turnout("go_msg")
 
     log(
         f"NOT ENOUGH PLAYERS ({yes_votes} Yes, need {MIN_PLAYERS}) "
         "— sending low-turnout cancellation"
     )
     send_text_message(tab, LOW_TURNOUT_MSG)
-    return 0
+    return _finish_turnout("low_turnout")
 
 
 def run_send_low_turnout_cancel(tab: Tab) -> int:
