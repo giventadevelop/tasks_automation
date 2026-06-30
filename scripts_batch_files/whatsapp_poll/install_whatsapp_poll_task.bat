@@ -1,12 +1,11 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+call "%~dp0_env.bat"
 
 echo Installing WhatsApp Thursday scheduled task for current user...
 echo (No Administrator required for normal user-level tasks.)
 echo.
 
-REM Method 1: PowerShell Register-ScheduledTask (weekly + unlock triggers)
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install_whatsapp_poll_task.ps1"
 if %ERRORLEVEL% EQU 0 goto success
 
@@ -46,7 +45,7 @@ echo   - Friday turnout: 15:00-17:00 every 20 min (weather + go / cancel message
 echo.
 echo Test poll:    schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"
 echo Test turnout: schtasks /run /tn "WhatsApp Volleyball Turnout (Friday)"
-echo View logs:    view_logs.bat
-echo Remove: uninstall_whatsapp_poll_task.bat
+echo View logs:    %~dp0view_logs.bat
+echo Remove: %~dp0uninstall_whatsapp_poll_task.bat
 pause
 exit /b 0

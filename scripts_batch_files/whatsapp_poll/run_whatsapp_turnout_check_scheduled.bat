@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableDelayedExpansion
+call "%~dp0_env.bat"
 REM Scheduled Friday turnout: every 20 min from 3 PM until 5 PM.
-cd /d "%~dp0"
 
-set "LOG_DIR=%~dp0logs"
+set "LOG_DIR=%MODULE_ROOT%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "LOG_DAY=%%I"
 set "LOG_FILE=%LOG_DIR%\whatsapp_turnout_%LOG_DAY%.log"
@@ -16,18 +16,18 @@ if not defined PY (
     exit /b 1
 )
 
-%PY% "%~dp0log_rotate.py" >>"%LOG_FILE%" 2>&1
+%PY% "%MODULE_ROOT%\log_rotate.py" >>"%LOG_FILE%" 2>&1
 
 echo.>>"%LOG_FILE%"
 echo ============================================================>>"%LOG_FILE%"
 echo [%date% %time%] turnout check started>>"%LOG_FILE%"
 
-%PY% -u "%~dp0schedule_gate_turnout.py" >>"%LOG_FILE%" 2>&1
+%PY% -u "%MODULE_ROOT%\schedule_gate_turnout.py" >>"%LOG_FILE%" 2>&1
 set GATE_RC=!ERRORLEVEL!
 echo [%date% %time%] turnout_gate exit=!GATE_RC!>>"%LOG_FILE%"
 if !GATE_RC! GEQ 2 (
     echo [%date% %time%] schedule gate: skip>>"%LOG_FILE%"
-    %PY% "%~dp0generate_log_viewer.py" >nul 2>&1
+    %PY% "%MODULE_ROOT%\generate_log_viewer.py" >nul 2>&1
     exit /b 0
 )
 
@@ -37,8 +37,8 @@ call "%~dp0start_edge_cdp.bat" >>"%LOG_FILE%" 2>&1
 set EDGE_RC=!ERRORLEVEL!
 if !EDGE_RC! NEQ 0 (
     echo [%date% %time%] FAIL: Edge CDP>>"%LOG_FILE%"
-    %PY% -u "%~dp0schedule_gate_turnout.py" --mark-failed "edge_cdp_failed">>"%LOG_FILE%" 2>&1
-    %PY% "%~dp0generate_log_viewer.py" >nul 2>&1
+    %PY% -u "%MODULE_ROOT%\schedule_gate_turnout.py" --mark-failed "edge_cdp_failed">>"%LOG_FILE%" 2>&1
+    %PY% "%MODULE_ROOT%\generate_log_viewer.py" >nul 2>&1
     exit /b 1
 )
 
@@ -47,7 +47,7 @@ timeout /t 10 /nobreak >nul
 
 %PY% -u -c "import websocket" >nul 2>&1
 if errorlevel 1 (
-    %PY% -m pip install -q -r "%~dp0requirements.txt" >>"%LOG_FILE%" 2>&1
+    %PY% -m pip install -q -r "%MODULE_ROOT%\requirements.txt" >>"%LOG_FILE%" 2>&1
 )
 
 set "CONTACT=Volleyball Friday"
@@ -59,16 +59,16 @@ set "PYTHONUNBUFFERED=1"
 set "SCHEDULED=1"
 
 echo [%date% %time%] launching turnout check min_yes=!MIN_PLAYERS!>>"%LOG_FILE%"
-%PY% -u "%~dp0whatsapp_poll.py" >>"%LOG_FILE%" 2>&1
+%PY% -u "%MODULE_ROOT%\whatsapp_poll.py" >>"%LOG_FILE%" 2>&1
 set RC=!ERRORLEVEL!
 echo [%date% %time%] whatsapp_poll.py exit=!RC!>>"%LOG_FILE%"
 
 if !RC! EQU 0 (
     echo [%date% %time%] DONE exit=!RC! turnout message sent>>"%LOG_FILE%"
 ) else (
-    %PY% -u "%~dp0schedule_gate_turnout.py" --mark-failed "exit_!RC!">>"%LOG_FILE%" 2>&1
+    %PY% -u "%MODULE_ROOT%\schedule_gate_turnout.py" --mark-failed "exit_!RC!">>"%LOG_FILE%" 2>&1
     echo [%date% %time%] FAILED exit=!RC! — will retry every 20 min until 5 PM>>"%LOG_FILE%"
 )
 
-%PY% "%~dp0generate_log_viewer.py" >nul 2>&1
+%PY% "%MODULE_ROOT%\generate_log_viewer.py" >nul 2>&1
 exit /b !RC!

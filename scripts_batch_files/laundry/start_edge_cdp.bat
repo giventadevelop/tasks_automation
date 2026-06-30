@@ -2,7 +2,6 @@
 setlocal EnableDelayedExpansion
 REM Starts Microsoft Edge with CDP on port 9222 IF it isn't already running.
 REM Uses C:\edge-cdp-laundry as the dedicated TryCents profile (log in once there).
-REM Works from any project folder — no hardcoded paths.
 
 set "CDP_PORT=9222"
 set "CDP_URL=http://localhost:%CDP_PORT%/json/version"

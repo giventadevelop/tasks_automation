@@ -1,10 +1,6 @@
 @echo off
 setlocal
-REM ============================================================
-REM   One-time setup for YouTube_Transcribe.
-REM   Creates ~/venvs/whisper inside WSL with faster-whisper installed.
-REM   Safe to run multiple times — it's idempotent.
-REM ============================================================
+REM One-time setup for YouTube_Transcribe (WSL venv ~/venvs/whisper).
 echo Ensuring WSL venv ~/venvs/whisper has faster-whisper...
 wsl.exe -e bash -lc "set -e; \
   if [ ! -x ~/venvs/whisper/bin/python ]; then \

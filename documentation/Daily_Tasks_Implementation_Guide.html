@@ -151,22 +151,34 @@
             <p>Set <code>TASKS_AUTOMATION_ROOT=&lt;REPO_ROOT&gt;</code> so Laundry / WhatsApp / YouTube buttons find their <code>.bat</code> files. The launcher shortcut (below) sets this automatically.</p>
         </div>
 
-        <h2 id="desktop">Desktop shortcut &amp; single-shot launch</h2>
+        <h2 id="desktop">Desktop shortcut &amp; launchers</h2>
         <div class="section-container">
+            <div class="section-header">Production vs development launch</div>
+            <table>
+                <thead><tr><th>Script</th><th>What it runs</th><th>When to use</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><code class="script-name">launch_daily_tasks_dashboard.bat</code></td>
+                        <td><code>dist\calendar_automate.exe</code> if present, else Python entry script</td>
+                        <td>Normal daily use — packaged dashboard</td>
+                    </tr>
+                    <tr>
+                        <td><code class="script-name">launch_daily_tasks_dashboard_dev.bat</code></td>
+                        <td>Always <code>py -3 google_calendar_and_contacts_automate.py</code> (never the .exe)</td>
+                        <td>After editing dashboard Python code — instant latest UI without rebuilding</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>Both set <code>TASKS_AUTOMATION_ROOT</code> to the repo root so WhatsApp, Laundry, and YouTube buttons find their <code>.bat</code> files.</p>
             <div class="section-header">One-click desktop access</div>
             <ol>
-                <li><strong>Build</strong> (first time or after dashboard changes): <code class="script-name">documentation\build_daily_tasks.bat</code> — installs deps and builds <code>dist\calendar_automate.exe</code>.</li>
-                <li>From <code>&lt;REPO_ROOT&gt;\documentation\</code>, run <code class="script-name">create_desktop_shortcut.bat</code> (or <code class="script-name">build_daily_tasks.bat --shortcut</code>).</li>
+                <li><strong>Build</strong> (first time or after dashboard changes you want in the .exe): <code class="script-name">scripts_batch_files\dashboard\build_daily_tasks.bat</code> — installs deps and builds <code>dist\calendar_automate.exe</code>.</li>
+                <li>From <code>&lt;REPO_ROOT&gt;\scripts_batch_files\dashboard\</code>, run <code class="script-name">create_desktop_shortcut.bat</code> (or <code class="script-name">build_daily_tasks.bat --shortcut</code>).</li>
                 <li>This creates <strong>Daily Tasks Automation.lnk</strong> on your Desktop.</li>
-                <li>The shortcut targets <code class="script-name">launch_daily_tasks_dashboard.bat</code>, which:
-                    <ul>
-                        <li>Sets <code>TASKS_AUTOMATION_ROOT</code> to the repo root</li>
-                        <li>Starts <code>dist\calendar_automate.exe</code> if built, otherwise <code>py -3 google_calendar_and_contacts_automate.py</code></li>
-                    </ul>
-                </li>
+                <li>The shortcut targets <code class="script-name">launch_daily_tasks_dashboard.bat</code> (production .exe when built).</li>
             </ol>
             <div class="info">
-                <strong>Dashboard WhatsApp buttons:</strong> <strong>WhatsApp Poll (manual)</strong> and <strong>Volleyball Low Turnout (Friday)</strong> launch <code>WhatsApp_Web_Poll\*.bat</code>. Each calls <code>start_edge_cdp.bat</code> — if Edge is closed, it starts Edge with <code>web.whatsapp.com</code> in profile <code>C:\edge-cdp</code>.
+                <strong>Dashboard WhatsApp buttons:</strong> <strong>WhatsApp Poll (manual)</strong> and <strong>Volleyball Low Turnout (Friday)</strong> launch <code>scripts_batch_files\whatsapp_poll\*.bat</code>. Each calls <code>start_edge_cdp.bat</code> — if Edge is closed, it starts Edge with <code>web.whatsapp.com</code> in profile <code>C:\edge-cdp</code>.
             </div>
             <div class="warning">
                 <strong>The .exe is the dashboard only.</strong> WhatsApp, laundry, and YouTube still need their repo folders and Python for the <code>.bat</code> scripts. Keep the full <code>tasks_automation</code> tree on disk.
@@ -177,14 +189,24 @@
             </div>
         </div>
 
-        <div class="command-block" data-template-command="cd &quot;&lt;REPO_ROOT&gt;\documentation&quot; &amp;&amp; create_desktop_shortcut.bat">
+        <div class="command-block" data-template-command="cd &quot;&lt;REPO_ROOT&gt;\scripts_batch_files\dashboard&quot; &amp;&amp; launch_daily_tasks_dashboard_dev.bat">
+            <div class="command-header">
+                <span class="command-type">Launch dashboard (dev — latest Python)</span>
+                <div class="command-header-buttons">
+                    <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-launch-dev')">Copy</button>
+                </div>
+            </div>
+            <div class="command-content" id="cmd-launch-dev">cd "&lt;REPO_ROOT&gt;\scripts_batch_files\dashboard" &amp;&amp; launch_daily_tasks_dashboard_dev.bat</div>
+        </div>
+
+        <div class="command-block" data-template-command="cd &quot;&lt;REPO_ROOT&gt;\scripts_batch_files\dashboard&quot; &amp;&amp; create_desktop_shortcut.bat">
             <div class="command-header">
                 <span class="command-type">Create desktop shortcut</span>
                 <div class="command-header-buttons">
                     <button type="button" class="copy-button" onclick="copyCommand(this, 'cmd-shortcut')">Copy</button>
                 </div>
             </div>
-            <div class="command-content" id="cmd-shortcut">cd "&lt;REPO_ROOT&gt;\documentation" &amp;&amp; create_desktop_shortcut.bat</div>
+            <div class="command-content" id="cmd-shortcut">cd "&lt;REPO_ROOT&gt;\scripts_batch_files\dashboard" &amp;&amp; create_desktop_shortcut.bat</div>
         </div>
 
         <h2 id="dashboard">Dashboard vs scheduled launches</h2>
@@ -245,8 +267,8 @@ Task Scheduler (Friday 3 PM / 4 PM) → run_whatsapp_turnout_check_scheduled.bat
             <table>
                 <thead><tr><th>Automation</th><th>Edge profile</th><th>Start script</th></tr></thead>
                 <tbody>
-                    <tr><td>WhatsApp Poll</td><td><code>C:\edge-cdp</code></td><td><code>WhatsApp_Web_Poll\start_edge_cdp.bat</code></td></tr>
-                    <tr><td>Laundry TryCents</td><td><code>C:\edge-cdp-laundry</code></td><td><code>Laundry_TryCents\start_edge_cdp.bat</code></td></tr>
+                    <tr><td>WhatsApp Poll</td><td><code>C:\edge-cdp</code></td><td><code>scripts_batch_files\whatsapp_poll\start_edge_cdp.bat</code></td></tr>
+                    <tr><td>Laundry TryCents</td><td><code>C:\edge-cdp-laundry</code></td><td><code>scripts_batch_files\laundry\start_edge_cdp.bat</code></td></tr>
                 </tbody>
             </table>
             <p>Log in once per profile (WhatsApp Web / TryCents). Quit the other automation’s Edge instance before switching — both use CDP port <code>9222</code>.</p>
@@ -259,10 +281,10 @@ Task Scheduler (Friday 3 PM / 4 PM) → run_whatsapp_turnout_check_scheduled.bat
                 <thead><tr><th>Symptom</th><th>What to do</th></tr></thead>
                 <tbody>
                     <tr><td>Laundry / WhatsApp button “not found”</td><td>Set <code>TASKS_AUTOMATION_ROOT</code> to <code>&lt;REPO_ROOT&gt;</code> or use the desktop launcher shortcut.</td></tr>
-                    <tr><td>Properties file missing</td><td>Add <code>property_files</code> beside <code>calendar_automate.exe</code> with your offline config.</td></tr>
-                    <tr><td>CDP port in use</td><td>Close all Chrome/Edge; run the correct <code>start_edge_cdp.bat</code>.</td></tr>
+                    <tr><td>Dashboard shows old buttons after code change</td><td>Rebuild with <code>scripts_batch_files\dashboard\build_daily_tasks.bat</code>, or use <code>launch_daily_tasks_dashboard_dev.bat</code> for latest Python source.</td></tr>
+                    <tr><td>CDP port in use</td><td>Close all Chrome/Edge; run the correct <code>scripts_batch_files\*\start_edge_cdp.bat</code>.</td></tr>
                     <tr><td>Scheduled poll ran twice</td><td>Check <code>whatsapp_poll_status.json</code>; success stops hourly retries. See WhatsApp schedule HTML docs.</td></tr>
-                    <tr><td>Poll log incomplete (no [wapoll] lines)</td><td>WhatsApp slow to load; hourly retry or run <code>view_logs.bat</code>. Avoid mouse in Edge during run.</td></tr>
+                    <tr><td>Poll log incomplete (no [wapoll] lines)</td><td>WhatsApp slow to load; hourly retry or run <code>scripts_batch_files\whatsapp_poll\view_logs.bat</code>. Avoid mouse in Edge during run.</td></tr>
                     <tr><td>Friday cancel not sent</td><td>Yes votes may be ≥ 6, or weather cancelled game, or turnout already succeeded. See Friday turnout HTML doc.</td></tr>
                 </tbody>
             </table>
@@ -288,12 +310,15 @@ Task Scheduler (Friday 3 PM / 4 PM) → run_whatsapp_turnout_check_scheduled.bat
             const r = q();
             const deps = 'cd "' + r + '\\google_calendar_and_contacts_automate" && py -3 -m pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties pyinstaller websocket-client';
             const build = 'cd "' + r + '\\google_calendar_and_contacts_automate" && py -3 -m PyInstaller google_calendar_and_contacts_automate.spec';
-            const shortcut = 'cd "' + r + '\\documentation" && create_desktop_shortcut.bat';
+            const shortcut = 'cd "' + r + '\\scripts_batch_files\\dashboard" && create_desktop_shortcut.bat';
+            const launchDev = 'cd "' + r + '\\scripts_batch_files\\dashboard" && launch_daily_tasks_dashboard_dev.bat';
             document.getElementById('cmd-deps').textContent = deps;
             document.getElementById('cmd-deps-single').textContent = deps;
             document.getElementById('cmd-build').textContent = build;
             document.getElementById('cmd-build-single').textContent = build;
             document.getElementById('cmd-shortcut').textContent = shortcut;
+            const elDev = document.getElementById('cmd-launch-dev');
+            if (elDev) elDev.textContent = launchDev;
         }
         function syncRepo(v) { repoRoot = v; refreshCommands(); }
         function copyCommand(btn, id) {

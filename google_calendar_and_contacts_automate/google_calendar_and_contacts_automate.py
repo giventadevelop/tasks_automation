@@ -16,6 +16,8 @@ from calendar_app_paths import (
     property_files_locations_hint,
     resolved_property_files_dir,
     resolved_tasks_automation_root,
+    task_batch_path,
+    task_batch_workdir,
 )
 
 # Set up logging
@@ -1960,14 +1962,15 @@ def main():
             elif choice == 'laundry':
                 tasks_root = resolved_tasks_automation_root()
                 laundry_path = os.path.join(tasks_root, 'Laundry_TryCents')
-                bat_path = os.path.join(laundry_path, 'run_laundry.bat')
+                bat_path = task_batch_path('laundry', 'run_laundry.bat')
+                bat_workdir = task_batch_workdir('laundry')
                 if not os.path.isfile(bat_path):
                     messagebox.showerror(
                         "Error",
                         "Laundry launcher not found:\n"
                         f"{bat_path}\n\n"
                         "Set environment variable TASKS_AUTOMATION_ROOT to your tasks_automation "
-                        "folder (the one that contains Laundry_TryCents), or place that checkout at "
+                        "folder (the one that contains scripts_batch_files), or place that checkout at "
                         "tasks_automation next to this .exe, then try again.",
                     )
                     continue
@@ -1975,7 +1978,7 @@ def main():
                     continue
                 try:
                     if sys.platform == 'win32':
-                        launch_task_batch_in_console(bat_path, laundry_path)
+                        launch_task_batch_in_console(bat_path, bat_workdir)
                     else:
                         laundry_main = os.path.join(laundry_path, 'laundry_automation.py')
                         if os.path.isfile(laundry_main):
@@ -1997,14 +2000,15 @@ def main():
             elif choice == 'whatsapp_poll':
                 tasks_root = resolved_tasks_automation_root()
                 poll_path = os.path.join(tasks_root, 'WhatsApp_Web_Poll')
-                bat_path = os.path.join(poll_path, 'run_whatsapp_poll.bat')
+                bat_path = task_batch_path('whatsapp_poll', 'run_whatsapp_poll.bat')
+                bat_workdir = task_batch_workdir('whatsapp_poll')
                 if not os.path.isfile(bat_path):
                     messagebox.showerror(
                         "Error",
                         "WhatsApp poll launcher not found:\n"
                         f"{bat_path}\n\n"
                         "Set environment variable TASKS_AUTOMATION_ROOT to your tasks_automation "
-                        "folder (the one that contains WhatsApp_Web_Poll), or place that checkout at "
+                        "folder (the one that contains scripts_batch_files), or place that checkout at "
                         "tasks_automation next to this app, then try again.",
                     )
                     continue
@@ -2016,7 +2020,7 @@ def main():
                     if sys.platform == 'win32':
                         launch_task_batch_in_console(
                             bat_path,
-                            poll_path,
+                            bat_workdir,
                             extra_env={
                                 'SKIP_PROMPTS': '1',
                                 'CONTACT': contact,
@@ -2058,7 +2062,8 @@ def main():
                     if mode == 'check'
                     else 'run_whatsapp_low_turnout_cancel.bat'
                 )
-                bat_path = os.path.join(poll_path, bat_name)
+                bat_path = task_batch_path('whatsapp_poll', bat_name)
+                bat_workdir = task_batch_workdir('whatsapp_poll')
                 if not os.path.isfile(bat_path):
                     messagebox.showerror(
                         "Error",
@@ -2069,7 +2074,7 @@ def main():
                     if sys.platform == 'win32':
                         launch_task_batch_in_console(
                             bat_path,
-                            poll_path,
+                            bat_workdir,
                             extra_env={
                                 'SKIP_PROMPTS': '1',
                                 'CONTACT': contact,
@@ -2124,23 +2129,22 @@ def main():
                 tasks_root = resolved_tasks_automation_root()
                 yt_path = os.path.join(tasks_root, 'YouTube_Transcribe')
                 bat_name = 'run_transcribe.bat' if choice == 'youtube_transcribe' else 'prune_transcripts.bat'
-                bat_path = os.path.join(yt_path, bat_name)
+                bat_path = task_batch_path('youtube', bat_name)
+                bat_workdir = task_batch_workdir('youtube')
                 if not os.path.isfile(bat_path):
                     messagebox.showerror(
                         "Error",
                         f"YouTube_Transcribe launcher not found at:\n{bat_path}\n\n"
                         "Set TASKS_AUTOMATION_ROOT to your tasks_automation checkout (folder that "
-                        "contains YouTube_Transcribe), or keep the default path that contains "
-                        "Laundry_TryCents\\run_laundry.bat.",
+                        "contains scripts_batch_files), or keep the default path that contains "
+                        "scripts_batch_files\\laundry\\run_laundry.bat.",
                     )
                     continue
                 try:
                     if sys.platform == 'win32':
-                        # Launch the .bat in a new console window so the user can
-                        # see prompts (URL input, model picker) and progress logs.
                         subprocess.Popen(
                             ['cmd.exe', '/c', 'start', '', 'cmd.exe', '/k', bat_path],
-                            cwd=yt_path,
+                            cwd=bat_workdir,
                         )
                     else:
                         # WSL/Linux fallback — just run the python script directly.

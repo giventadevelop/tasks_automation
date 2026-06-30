@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
+call "%~dp0_env.bat"
 REM Read latest poll in chat; send low-turnout cancel if Yes votes < MIN_PLAYERS (default 6).
-cd /d "%~dp0"
 
 if not "%SKIP_PROMPTS%"=="1" (
     set "CONTACT="
@@ -60,9 +60,9 @@ if not defined PY (
 )
 
 %PY% -c "import websocket" >nul 2>&1
-if errorlevel 1 %PY% -m pip install -q -r "%~dp0requirements.txt"
+if errorlevel 1 %PY% -m pip install -q -r "%MODULE_ROOT%\requirements.txt"
 
-%PY% "%~dp0whatsapp_poll.py"
+%PY% "%MODULE_ROOT%\whatsapp_poll.py"
 set RC=%ERRORLEVEL%
 echo.
 if %RC% EQU 0 ( echo === DONE. === ) else ( echo === FAILED exit %RC% === )

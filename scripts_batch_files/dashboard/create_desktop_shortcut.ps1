@@ -5,9 +5,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$DocDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = (Resolve-Path (Join-Path $DocDir "..")).Path
-$Launcher = Join-Path $DocDir "launch_daily_tasks_dashboard.bat"
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
+$Launcher = Join-Path $ScriptDir "launch_daily_tasks_dashboard.bat"
 
 if (-not (Test-Path $Launcher)) {
     Write-Error "Missing launcher: $Launcher"
@@ -21,7 +21,7 @@ if (-not $ShortcutPath) {
 $wsh = New-Object -ComObject WScript.Shell
 $sc = $wsh.CreateShortcut($ShortcutPath)
 $sc.TargetPath = $Launcher
-$sc.WorkingDirectory = $DocDir
+$sc.WorkingDirectory = $ScriptDir
 $sc.Description = "Daily Tasks Automation dashboard (repo root via TASKS_AUTOMATION_ROOT)"
 $sc.Save()
 

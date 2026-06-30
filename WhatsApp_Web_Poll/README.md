@@ -21,8 +21,8 @@ workspace is more convenient.
 ## Files
 
 - `whatsapp_poll.py` — the driver (pure Python, ~250 lines)
-- `start_chrome_cdp.bat` — boots Chrome with CDP if not already running
-- `run_whatsapp_poll.bat` — single-click launcher (Windows)
+- `start_edge_cdp.bat` — boots Edge with CDP if not already running (`scripts_batch_files/whatsapp_poll/`)
+- `run_whatsapp_poll.bat` — single-click launcher (Windows; `scripts_batch_files/whatsapp_poll/`)
 - `requirements.txt` — `websocket-client` (already provided by the
   `browser-use` venv on this machine)
 - `README.md` — this file
@@ -43,9 +43,9 @@ workspace is more convenient.
 
 **Dry run (default — fills the poll but does NOT click Send):**
 
-Double-click `run_whatsapp_poll.bat`, or from cmd:
+Double-click `scripts_batch_files\whatsapp_poll\run_whatsapp_poll.bat`, or from cmd:
 
-    cd C:\E_Drive\project_workspace\tasks_automation\WhatsApp_Web_Poll
+    cd F:\project_workspace\tasks_automation\scripts_batch_files\whatsapp_poll
     run_whatsapp_poll.bat
 
 You'll see the poll composer pop up in Chrome with the question and
@@ -115,7 +115,7 @@ To run automatically:
 
 1. One-time: sign in to WhatsApp Web in Edge (`C:\edge-cdp` profile).
 2. Double-click **`install_whatsapp_poll_task.bat`** (Thursday hourly + Friday 3/4 PM tasks).
-3. Logs: `view_logs.bat` or `logs/index.html`.
+3. Logs: `scripts_batch_files\whatsapp_poll\view_logs.bat` or `logs/index.html`.
 
 | Day | Schedule | Behavior |
 |-----|----------|----------|

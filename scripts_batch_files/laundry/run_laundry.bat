@@ -1,10 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
-REM ============================================================
-REM  Laundry TryCents order — CDP via Microsoft Edge (Windows-native).
-REM  Double-click this file.
-REM ============================================================
-cd /d "%~dp0"
+call "%~dp0_env.bat"
+REM Laundry TryCents order — CDP via Microsoft Edge (Windows-native).
 
 call "%~dp0start_edge_cdp.bat"
 if errorlevel 1 (
@@ -37,7 +34,7 @@ echo.
 echo Running laundry order flow via Edge CDP...
 echo (Uses Edge + CDP directly — NOT browser-use / Selenium)
 echo.
-%PY% "%~dp0_cdp_driver.py"
+%PY% "%MODULE_ROOT%\_cdp_driver.py"
 set RC=%ERRORLEVEL%
 
 echo.

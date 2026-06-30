@@ -2,7 +2,6 @@
 setlocal EnableDelayedExpansion
 REM Starts Microsoft Edge with CDP on port 9222 IF it isn't already running.
 REM Uses C:\edge-cdp as the dedicated profile (sign in to WhatsApp Web once there).
-REM Works from any project folder — no hardcoded paths.
 
 set "CDP_PORT=9222"
 set "CDP_URL=http://localhost:%CDP_PORT%/json/version"
@@ -53,7 +52,6 @@ timeout /t 1 /nobreak >nul
 curl.exe -fs --max-time 2 "%CDP_URL%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [ok] Edge CDP is up.
-    REM Brief warmup so web.whatsapp.com can start loading before automation attaches.
     timeout /t 5 /nobreak >nul
     exit /b 0
 )

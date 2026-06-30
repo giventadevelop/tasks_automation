@@ -487,7 +487,7 @@ def main() -> int:
   {''.join(sections)}
 
   <footer>
-    Open via <code>view_logs.bat</code> or file:
+    Open via <code>scripts_batch_files\\whatsapp_poll\\view_logs.bat</code> or file:
     <code>WhatsApp_Web_Poll\\logs\\index.html</code>
   </footer>
 </body>

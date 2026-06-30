@@ -8,9 +8,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
+$ModuleRoot = Join-Path $RepoRoot "WhatsApp_Web_Poll"
 $PollBat = Join-Path $ScriptDir "run_whatsapp_poll_scheduled.bat"
 $TurnoutBat = Join-Path $ScriptDir "run_whatsapp_turnout_check_scheduled.bat"
-$GatePy = Join-Path $ScriptDir "schedule_gate.py"
+$GatePy = Join-Path $ModuleRoot "schedule_gate.py"
 
 function Set-TaskSettings($Name) {
     try {
@@ -29,7 +31,6 @@ function Set-TaskSettings($Name) {
 }
 
 function Set-TaskStopExistingPolicy($Name) {
-    # PowerShell ScheduledTask cmdlets lack StopExisting; patch via task XML.
     $tmp = Join-Path $env:TEMP "tasks_automation_$([guid]::NewGuid().ToString('N')).xml"
     try {
         schtasks /query /tn $Name /xml | Out-File -FilePath $tmp -Encoding Unicode
@@ -60,8 +61,8 @@ function Set-TaskStopExistingPolicy($Name) {
 
 Write-Host "Installing for user: $env:USERNAME"
 Write-Host "Script dir: $ScriptDir"
+Write-Host "Module dir: $ModuleRoot"
 
-# ---- Thursday poll (hourly 8 AM - 11 PM) ----
 schtasks /delete /tn $PollTaskName /f 2>&1 | Out-Null
 $pollCreate = cmd /c "schtasks /create /tn `"$PollTaskName`" /tr `"$PollBat`" /sc weekly /d THU /st 08:00 /ri 60 /du 15:00 /f" 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -72,7 +73,6 @@ Write-Host "[ok] Thursday poll: weekly, 08:00 + hourly until 23:00 (retries if f
 Set-TaskSettings $PollTaskName | Out-Null
 Set-TaskStopExistingPolicy $PollTaskName | Out-Null
 
-# ---- Friday turnout (every 20 min, 3 PM - 5 PM) ----
 if (Test-Path $TurnoutBat) {
     foreach ($legacy in @(
         "${TurnoutTaskName} 3PM",
@@ -114,8 +114,13 @@ $runNow = $false
 if (Test-Path $GatePy) {
     $py = Get-Command py -ErrorAction SilentlyContinue
     if ($py) {
-        & py -3 $GatePy 2>&1 | ForEach-Object { Write-Host $_ }
-        if ($LASTEXITCODE -eq 0) { $runNow = $true }
+        Push-Location $ModuleRoot
+        try {
+            & py -3 $GatePy 2>&1 | ForEach-Object { Write-Host $_ }
+            if ($LASTEXITCODE -eq 0) { $runNow = $true }
+        } finally {
+            Pop-Location
+        }
     }
 }
 if ($runNow) {

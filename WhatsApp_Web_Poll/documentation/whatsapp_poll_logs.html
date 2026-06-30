@@ -48,7 +48,7 @@
         (regenerated after each scheduled run; auto-refreshes every 60s)
         <br><br>
         <strong>Quick open (Windows):</strong>
-        <code>WhatsApp_Web_Poll\view_logs.bat</code>
+        <code>scripts_batch_files\whatsapp_poll\view_logs.bat</code>
         <br><br>
         <strong>Schedule guides:</strong>
         <a href="whatsapp_poll_thursday_schedule.html">Thursday poll + weekly overview</a> ·
@@ -113,7 +113,7 @@ Hey folks, today's volleyball game at the park's off—doesn't look like we've g
     <div class="box warn">
         <strong>Incomplete run pattern</strong><br>
         If the log stops after <code>[ok] Edge CDP is up.</code> with no <code>[wapoll]</code> lines, the Python step did not complete.
-        Thursday hourly retry should try again; check status JSON and <code>view_logs.bat</code>.
+        Thursday hourly retry should try again; check status JSON and <code>scripts_batch_files\whatsapp_poll\view_logs.bat</code>.
     </div>
 
     <h2>Status badges in viewer</h2>
@@ -128,8 +128,8 @@ Hey folks, today's volleyball game at the park's off—doesn't look like we've g
     <h2>Manual re-run</h2>
     <pre>schtasks /run /tn "WhatsApp Volleyball Poll (Thursday)"
 schtasks /run /tn "WhatsApp Volleyball Turnout (Friday) 3PM"
-WhatsApp_Web_Poll\run_whatsapp_poll.bat
-WhatsApp_Web_Poll\run_whatsapp_turnout_check.bat</pre>
+scripts_batch_files\whatsapp_poll\run_whatsapp_poll.bat
+scripts_batch_files\whatsapp_poll\run_whatsapp_turnout_check.bat</pre>
 
     <p><a href="whatsapp_poll_thursday_schedule.html">← Weekly schedule guide</a></p>
 </body>

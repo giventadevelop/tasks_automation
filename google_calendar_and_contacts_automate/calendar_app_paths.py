@@ -69,9 +69,24 @@ def tasks_automation_root_candidates():
         yield r'C:\E_Drive\project_workspace\tasks_automation'
 
 
+SCRIPTS_BATCH_DIR = 'scripts_batch_files'
+
+
+def task_batch_path(module, bat_name):
+    """Absolute path to a launcher under scripts_batch_files/<module>/."""
+    return os.path.join(
+        resolved_tasks_automation_root(), SCRIPTS_BATCH_DIR, module, bat_name,
+    )
+
+
+def task_batch_workdir(module):
+    """Working directory for launching a module batch file (scripts_batch_files/<module>/)."""
+    return os.path.join(resolved_tasks_automation_root(), SCRIPTS_BATCH_DIR, module)
+
+
 def resolved_tasks_automation_root():
-    """First candidate root that contains Laundry_TryCents\\run_laundry.bat, else first candidate."""
-    marker = os.path.join('Laundry_TryCents', 'run_laundry.bat')
+    """First candidate root that contains scripts_batch_files\\laundry\\run_laundry.bat."""
+    marker = os.path.join(SCRIPTS_BATCH_DIR, 'laundry', 'run_laundry.bat')
     roots = list(tasks_automation_root_candidates())
     for r in roots:
         if r and os.path.isfile(os.path.join(r, marker)):

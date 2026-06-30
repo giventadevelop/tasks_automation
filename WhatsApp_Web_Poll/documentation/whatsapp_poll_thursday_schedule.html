@@ -506,7 +506,7 @@
             </table>
             <div class="info">
                 <strong>Check status:</strong> <code>py -3 schedule_gate.py --status</code> or open
-                <a href="whatsapp_poll_logs.html">logs viewer</a> (<code>view_logs.bat</code>).
+                <a href="whatsapp_poll_logs.html">logs viewer</a> (<code>scripts_batch_files\whatsapp_poll\view_logs.bat</code>).
             </div>
         </div>
 
@@ -572,7 +572,7 @@
                         <td>14-day log rotation; builds <code>logs/index.html</code></td>
                     </tr>
                     <tr>
-                        <td><code class="script-name">view_logs.bat</code></td>
+                        <td><code class="script-name">scripts_batch_files\whatsapp_poll\view_logs.bat</code></td>
                         <td>Rotate logs, rebuild viewer, open in browser</td>
                     </tr>
                     <tr>
@@ -664,7 +664,7 @@
             <p>Double-click <code class="script-name">install_whatsapp_poll_task.bat</code> in the <code>WhatsApp_Web_Poll</code> folder.</p>
             <div class="success">
                 <p class="tight-top"><strong>After install:</strong> logs under <code>WhatsApp_Web_Poll/logs/</code>;
-                open <code class="script-name">view_logs.bat</code> or <a href="whatsapp_poll_logs.html">logs documentation</a>.</p>
+                open <code class="script-name">scripts_batch_files\whatsapp_poll\view_logs.bat</code> or <a href="whatsapp_poll_logs.html">logs documentation</a>.</p>
             </div>
         </div>
 
@@ -752,7 +752,7 @@ run_whatsapp_poll_scheduled.bat  OR  run_whatsapp_turnout_check_scheduled.bat
                 <li><code>logs/whatsapp_turnout_YYYYMMDD.log</code> — Friday turnout runs</li>
                 <li><code>logs/index.html</code> — auto-generated viewer (refreshes every 60s)</li>
             </ul>
-            <p>Open via <code class="script-name">view_logs.bat</code> or read
+            <p>Open via <code class="script-name">scripts_batch_files\whatsapp_poll\view_logs.bat</code> or read
             <a href="whatsapp_poll_logs.html">whatsapp_poll_logs.html</a>.</p>
             <p>Logs rotate automatically — files older than <strong>14 days</strong> are deleted (<code>log_rotate.py</code>).</p>
         </div>

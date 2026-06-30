@@ -1,15 +1,18 @@
 @echo off
 setlocal EnableDelayedExpansion
-REM ============================================================
-REM   YouTube Transcribe — interactive launcher.
-REM   Prompts for a URL, runs yt-dlp + faster-whisper in WSL.
-REM ============================================================
-cd /d "%~dp0"
+call "%~dp0_env.bat"
+REM YouTube Transcribe — interactive launcher (yt-dlp + faster-whisper in WSL).
 
-REM Clear inherited values so an old env can't poison this run
 set "URL="
 set "WHISPER_MODEL="
 set "TRANSLATE="
+
+for /f "delims=" %%W in ('wsl wslpath -a "%MODULE_ROOT%"') do set "WSL_MODULE=%%W"
+if not defined WSL_MODULE (
+    echo [FAIL] Could not resolve WSL path for %MODULE_ROOT%
+    pause
+    exit /b 1
+)
 
 echo.
 echo --- YouTube Transcribe ---
@@ -47,13 +50,12 @@ echo  Trans. = %TR_FLAG% (blank = auto)
 echo ============================================================
 echo.
 
-REM Build bash command. Single-quote the URL so it survives spaces/&.
-set "BASH_CMD=cd '/mnt/c/E_Drive/project_workspace/tasks_automation/YouTube_Transcribe'"
-set "BASH_CMD=%BASH_CMD% && WHISPER_MODEL='%WHISPER_MODEL%' ~/venvs/whisper/bin/python transcribe_youtube.py '%URL%' %TR_FLAG%"
+set "BASH_CMD=cd '!WSL_MODULE!'"
+set "BASH_CMD=!BASH_CMD! && WHISPER_MODEL='!WHISPER_MODEL!' ~/venvs/whisper/bin/python transcribe_youtube.py '!URL!' !TR_FLAG!"
 
 echo Launching script...
 echo.
-wsl.exe -e bash -lc "%BASH_CMD%"
+wsl.exe -e bash -lc "!BASH_CMD!"
 set RC=%ERRORLEVEL%
 
 echo.

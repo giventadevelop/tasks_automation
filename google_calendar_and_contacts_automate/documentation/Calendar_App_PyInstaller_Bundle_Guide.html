@@ -240,7 +240,7 @@
         <div class="section-intro" style="margin-top:0;">
             <p>The onefile <code class="code-highlight">calendar_automate.exe</code> is <strong>not</strong> a Python interpreter. The GUI must not launch satellite tools with <code class="code-highlight">sys.executable</code> pointing at a <code class="code-highlight">.py</code> file. Laundry and YouTube actions therefore resolve a real <strong>tasks_automation checkout on disk</strong> and start Windows <code class="code-highlight">.bat</code> files in a new console (same pattern as double-clicking the batch file).</p>
         </div>
-        <p><code class="script-name">calendar_app_paths.resolved_tasks_automation_root()</code> picks the first root that contains <code class="code-highlight">Laundry_TryCents\run_laundry.bat</code>, trying in order:</p>
+        <p><code class="script-name">calendar_app_paths.resolved_tasks_automation_root()</code> picks the first root that contains <code class="code-highlight">scripts_batch_files\laundry\run_laundry.bat</code>, trying in order:</p>
         <ol>
             <li>Environment variable <code class="code-highlight">TASKS_AUTOMATION_ROOT</code> (if set).</li>
             <li><code class="code-highlight">&lt;folder of your .exe&gt;\tasks_automation</code> (optional sidecar layout).</li>
@@ -249,8 +249,8 @@
         <div class="parameters-list">
             <p><strong>What gets launched (frozen, Windows)</strong></p>
             <ul>
-                <li><strong>Laundry:</strong> <code class="code-highlight">…\Laundry_TryCents\run_laundry.bat</code> with working directory <code class="code-highlight">Laundry_TryCents</code> (the batch uses <code class="code-highlight">%~dp0</code> and may call WSL or other tools defined inside your repo — keep the checkout intact).</li>
-                <li><strong>YouTube Transcribe / Cleanup transcripts:</strong> <code class="code-highlight">…\YouTube_Transcribe\run_transcribe.bat</code> or <code class="code-highlight">prune_transcripts.bat</code> with working directory <code class="code-highlight">YouTube_Transcribe</code>.</li>
+                <li><strong>Laundry:</strong> <code class="code-highlight">…\scripts_batch_files\laundry\run_laundry.bat</code> with working directory <code class="code-highlight">scripts_batch_files\laundry</code> (the batch sets <code class="code-highlight">MODULE_ROOT</code> to <code class="code-highlight">Laundry_TryCents</code> and may call WSL or other tools — keep the checkout intact).</li>
+                <li><strong>YouTube Transcribe / Cleanup transcripts:</strong> <code class="code-highlight">…\scripts_batch_files\youtube\run_transcribe.bat</code> or <code class="code-highlight">prune_transcripts.bat</code> with working directory <code class="code-highlight">scripts_batch_files\youtube</code>.</li>
             </ul>
         </div>
         <div class="info">
@@ -348,8 +348,18 @@
     </div>
 
     <div class="section-container output" id="deploy">
-        <div class="section-header output">Deploy</div>
+        <div class="section-header output">Deploy &amp; launch</div>
         <p>After a successful build, copy <code class="code-highlight">dist\calendar_automate.exe</code> from the <code class="script-name">google_calendar_and_contacts_automate</code> folder to your chosen install directory (for example a “Daily startup” applications folder). Place a <code class="code-highlight">property_files</code> directory <strong>in the same folder as the executable</strong> unless you intentionally embed those files at build time.</p>
+        <p>From the repo <code class="code-highlight">scripts_batch_files\dashboard\</code> folder:</p>
+        <table>
+            <thead><tr><th>Launcher</th><th>Runs</th></tr></thead>
+            <tbody>
+                <tr><td><code class="script-name">launch_daily_tasks_dashboard.bat</code></td><td><code>calendar_automate.exe</code> when built (production)</td></tr>
+                <tr><td><code class="script-name">launch_daily_tasks_dashboard_dev.bat</code></td><td>Always <code>google_calendar_and_contacts_automate.py</code> — latest source, skips .exe</td></tr>
+                <tr><td><code class="script-name">build_daily_tasks.bat</code></td><td>Rebuild <code>calendar_automate.exe</code> after dashboard Python changes</td></tr>
+            </tbody>
+        </table>
+        <p>Both launchers set <code class="code-highlight">TASKS_AUTOMATION_ROOT</code> to the repo root so WhatsApp, Laundry, and YouTube buttons find their <code class="code-highlight">.bat</code> files.</p>
         <p>Example copy (adjust paths): <code class="code-highlight">Copy-Item -Force dist\calendar_automate.exe "C:\…\calendar_api\calendar_automate.exe"</code></p>
         <div class="info">
             <strong>Tip:</strong> If Windows reports the file is in use, rename the new binary (for example <code class="code-highlight">calendar_automate_new.exe</code>) or close running instances before overwriting. The latest build can be copied as a new name (for example <code class="code-highlight">calendar_automate_rebuilt.exe</code>) and renamed after you close the old process.
@@ -384,7 +394,7 @@
                 </tr>
                 <tr>
                     <td>Laundry / YouTube button does nothing or “not found”</td>
-                    <td><code>TASKS_AUTOMATION_ROOT</code> not set and default path does not contain <code>Laundry_TryCents\run_laundry.bat</code></td>
+                    <td><code>TASKS_AUTOMATION_ROOT</code> not set and default path does not contain <code>scripts_batch_files\laundry\run_laundry.bat</code></td>
                     <td>Set the env var or add <code>TASKS_AUTOMATION_ROOT</code> to properties; ensure the repo tree exists at that root.</td>
                 </tr>
                 <tr>
