@@ -15,6 +15,9 @@ dist/
 /property_files/
 property_files/
 
+# Calendar automate runtime log (OAuth tokens; never commit)
+calendar_automate.log
+
 # WhatsApp poll runtime logs (never commit)
 WhatsApp_Web_Poll/logs/*
 !WhatsApp_Web_Poll/logs/.gitkeep
