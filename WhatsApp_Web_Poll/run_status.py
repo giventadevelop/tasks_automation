@@ -79,7 +79,14 @@ def message_sent_today(kind: str) -> bool:
     if rec.get("message_sent") is False:
         return False
     detail = str(rec.get("detail", ""))
-    return detail in ("go_msg", "weather_rain", "weather_temp", "low_turnout")
+    return detail in (
+        "go_msg",
+        "weather_rain",
+        "weather_temp",
+        "weather_temp_hot",
+        "weather_temp_cold",
+        "low_turnout",
+    )
 
 
 def failed_today(kind: str) -> bool:

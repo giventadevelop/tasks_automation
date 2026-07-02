@@ -14,7 +14,8 @@ Env vars:
   CDP_URL    default http://localhost:9222
   CONTACT    default "Volleyball Friday"
   POLL_TITLE override the question text
-  CANCEL_MSG / TEMP_CANCEL_MSG  cancellation texts for rain / temperature
+  CANCEL_MSG / HOT_CANCEL_MSG / COLD_CANCEL_MSG  weather cancellation texts
+  TEMP_CANCEL_MSG               legacy alias for hot cancel (optional override)
   LOW_TURNOUT_MSG               not-enough-players cancellation text
   GO_MSG                        all-clear message when weather + turnout OK (Friday)
   MIN_PLAYERS                   minimum Yes votes (default 6)
@@ -22,6 +23,7 @@ Env vars:
   SEND       "1" to actually click Send; anything else = dry run
   TRACE      "1" dumps DOM snapshots on failure (helpful first time)
   SKIP_WEATHER  "1" skips the weather pre-check entirely
+  TEST_WEATHER_CANCEL  dev only: rain | temp_hot | temp_cold (force cancel reason)
 """
 import json
 import os
@@ -45,10 +47,15 @@ DEFAULT_TITLE = (
 DEFAULT_CANCEL_MSG = (
     "🌧️ Rainy day — volleyball cancelled this Friday. We'll regroup next week."
 )
-DEFAULT_TEMP_CANCEL_MSG = (
-    "🌡️ Temperature outside playable range (65–92°F) — "
-    "volleyball cancelled this Friday. We'll regroup next week."
+DEFAULT_HOT_CANCEL_MSG = (
+    "🔥 Very hot outside — not optimal weather for volleyball.\n"
+    "Volleyball cancelled this Friday. We'll regroup next week."
 )
+DEFAULT_COLD_CANCEL_MSG = (
+    "🥶 Very cold outside — not optimal weather for volleyball.\n"
+    "Volleyball cancelled this Friday. We'll regroup next week."
+)
+DEFAULT_TEMP_CANCEL_MSG = DEFAULT_HOT_CANCEL_MSG  # legacy env name
 DEFAULT_LOW_TURNOUT_MSG = (
     "Today's volleyball game CANCELED : Not enough people\n\n"
     "Hey folks, today's volleyball game at the park's off—doesn't look like we've got "
@@ -61,7 +68,9 @@ DEFAULT_GO_MSG = (
 )
 POLL_TITLE = os.environ.get("POLL_TITLE", DEFAULT_TITLE)
 CANCEL_MSG = os.environ.get("CANCEL_MSG", DEFAULT_CANCEL_MSG)
-TEMP_CANCEL_MSG = os.environ.get("TEMP_CANCEL_MSG", DEFAULT_TEMP_CANCEL_MSG)
+HOT_CANCEL_MSG = os.environ.get("HOT_CANCEL_MSG", os.environ.get("TEMP_CANCEL_MSG", DEFAULT_HOT_CANCEL_MSG))
+COLD_CANCEL_MSG = os.environ.get("COLD_CANCEL_MSG", DEFAULT_COLD_CANCEL_MSG)
+TEMP_CANCEL_MSG = HOT_CANCEL_MSG
 LOW_TURNOUT_MSG = os.environ.get("LOW_TURNOUT_MSG", DEFAULT_LOW_TURNOUT_MSG)
 GO_MSG = os.environ.get("GO_MSG", DEFAULT_GO_MSG)
 MIN_PLAYERS = int(os.environ.get("MIN_PLAYERS", "6"))
@@ -109,12 +118,30 @@ SEASON_END_DAY = int(os.environ.get("SEASON_END_DAY", "30"))
 # Window we care about (tomorrow, local time): 4 PM – 8 PM
 WEATHER_WINDOW_START_HOUR = int(os.environ.get("WEATHER_START_HOUR", "16"))
 WEATHER_WINDOW_END_HOUR = int(os.environ.get("WEATHER_END_HOUR", "20"))
-# Playable temperature range (°F) during the game window
+# Playable temperature range (°F) during the game window (4 PM – 8 PM)
 TEMP_MIN_F = int(os.environ.get("TEMP_MIN_F", "65"))
-TEMP_MAX_F = int(os.environ.get("TEMP_MAX_F", "92"))
+TEMP_HOT_F = int(os.environ.get("TEMP_HOT_F", "90"))  # above this → too hot
+TEMP_MAX_F = int(os.environ.get("TEMP_MAX_F", str(TEMP_HOT_F)))  # legacy alias
+WEATHER_IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weather_images")
+WEATHER_IMAGE_FILES = {
+    "rain": "rainy.png",
+    "temp_hot": "hot.png",
+    "temp_cold": "cold.png",
+}
 # Rain decision thresholds
-RAIN_KEYWORDS = ("rain", "shower", "thunderstorm", "storm", "drizzle")
-RAIN_POP_THRESHOLD = int(os.environ.get("RAIN_POP_THRESHOLD", "50"))  # %
+RAIN_POP_THRESHOLD = int(os.environ.get("RAIN_POP_THRESHOLD", "50"))  # % — definite rain
+RAIN_POP_MODERATE = int(os.environ.get("RAIN_POP_MODERATE", "35"))  # % + precip wording
+PRECIP_PHRASES = (
+    "thunderstorm", "thunderstorms", "t-storm", "t-storms",
+    "rain shower", "rain showers", "showers", "shower",
+    "light rain", "heavy rain", "rain likely", "chance of rain",
+    "periods of rain", "drizzle", "freezing rain", "sleet", "wintry mix",
+)
+# Dev only: force cancel reason without NWS (rain | temp_hot | temp_cold)
+TEST_WEATHER_CANCEL = os.environ.get("TEST_WEATHER_CANCEL", "").strip().lower()
+# Peak/low temps from the latest weather_check_for_date (for message text)
+_last_weather_peak_f: int | None = None
+_last_weather_low_f: int | None = None
 # Skip the weather pre-check entirely (e.g. for indoor events / debugging)
 SKIP_WEATHER = os.environ.get("SKIP_WEATHER", "") == "1"
 
@@ -152,6 +179,27 @@ def _nws_get(url: str, timeout: float = 15) -> dict:
         return json.loads(r.read())
 
 
+def _forecast_implies_precip(short_forecast: str) -> bool:
+    """True when NWS shortForecast text describes actual precipitation."""
+    fc = short_forecast.lower()
+    return any(phrase in fc for phrase in PRECIP_PHRASES)
+
+
+def _hour_rain_level(pop: int, short_forecast: str) -> str:
+    """Classify rain severity: significant, moderate, or none."""
+    if pop >= RAIN_POP_THRESHOLD:
+        return "significant"
+    if pop >= RAIN_POP_MODERATE and _forecast_implies_precip(short_forecast):
+        return "moderate"
+    return ""
+
+
+def _reset_weather_stats() -> None:
+    global _last_weather_peak_f, _last_weather_low_f
+    _last_weather_peak_f = None
+    _last_weather_low_f = None
+
+
 def _in_volleyball_season(d: "datetime.date") -> bool:
     import datetime as _dt
 
@@ -185,6 +233,21 @@ def _location_matches_nws(points: dict) -> tuple[bool, str]:
 def weather_check_for_date(target: "datetime.date") -> tuple[str, str, str]:
     """Return (decision, human_message, cancel_reason) for target date game window."""
     import datetime as _dt
+
+    global _last_weather_peak_f, _last_weather_low_f
+    _reset_weather_stats()
+
+    if TEST_WEATHER_CANCEL in ("rain", "temp_hot", "temp_cold"):
+        log(f"weather: TEST_WEATHER_CANCEL={TEST_WEATHER_CANCEL!r} (dev override)")
+        if TEST_WEATHER_CANCEL == "temp_hot":
+            _last_weather_peak_f = TEMP_HOT_F + 5
+        elif TEST_WEATHER_CANCEL == "temp_cold":
+            _last_weather_low_f = TEMP_MIN_F - 5
+        return (
+            "cancel",
+            f"weather: dev test override → {TEST_WEATHER_CANCEL}",
+            TEST_WEATHER_CANCEL,
+        )
 
     if not _in_volleyball_season(target):
         return (
@@ -230,15 +293,17 @@ def weather_check_for_date(target: "datetime.date") -> tuple[str, str, str]:
         temp_unit = (p.get("temperatureUnit") or "F").upper()
         if temp is not None and temp_unit != "F":
             temp = int(round(temp * 9 / 5 + 32))
-        rainy = pop >= RAIN_POP_THRESHOLD or any(k in fc.lower() for k in RAIN_KEYWORDS)
-        temp_ok = temp is not None and TEMP_MIN_F <= temp <= TEMP_MAX_F
+        rain_level = _hour_rain_level(pop, fc)
+        too_hot = temp is not None and temp > TEMP_HOT_F
+        too_cold = temp is not None and temp < TEMP_MIN_F
         relevant.append({
             "hour": st.strftime("%I:%M %p").lstrip("0"),
             "pop": pop,
             "temp": temp,
             "forecast": fc,
-            "rainy": rainy,
-            "temp_ok": temp_ok,
+            "rain_level": rain_level,
+            "too_hot": too_hot,
+            "too_cold": too_cold,
         })
 
     if not relevant:
@@ -248,8 +313,10 @@ def weather_check_for_date(target: "datetime.date") -> tuple[str, str, str]:
             "",
         )
 
-    rainy_hours = [r for r in relevant if r["rainy"]]
-    bad_temp_hours = [r for r in relevant if r["temp"] is not None and not r["temp_ok"]]
+    significant_rain = [r for r in relevant if r["rain_level"] == "significant"]
+    moderate_rain = [r for r in relevant if r["rain_level"] == "moderate"]
+    hot_hours = [r for r in relevant if r["too_hot"]]
+    cold_hours = [r for r in relevant if r["too_cold"]]
     lines = [
         f"  {r['hour']}: {r['pop']}%"
         + (f", {r['temp']}°F" if r["temp"] is not None else "")
@@ -263,33 +330,55 @@ def weather_check_for_date(target: "datetime.date") -> tuple[str, str, str]:
         + "\n".join(lines)
     )
 
-    if rainy_hours:
+    if significant_rain:
         return (
             "cancel",
             summary + (
-                f"\n→ RAIN expected ({len(rainy_hours)} of {len(relevant)} hours flagged). "
+                f"\n→ RAIN expected ({len(significant_rain)} of {len(relevant)} hours "
+                f"at ≥{RAIN_POP_THRESHOLD}% PoP). Game cancelled due to weather."
+            ),
+            "rain",
+        )
+
+    if hot_hours:
+        peak = max(r["temp"] for r in hot_hours if r["temp"] is not None)
+        _last_weather_peak_f = peak
+        return (
+            "cancel",
+            summary + (
+                f"\n→ Too HOT ({len(hot_hours)} of {len(relevant)} hours above {TEMP_HOT_F}°F"
+                f"; peak {peak}°F). Game cancelled due to weather."
+            ),
+            "temp_hot",
+        )
+
+    if cold_hours:
+        low = min(r["temp"] for r in cold_hours if r["temp"] is not None)
+        _last_weather_low_f = low
+        return (
+            "cancel",
+            summary + (
+                f"\n→ Too COLD ({len(cold_hours)} of {len(relevant)} hours below {TEMP_MIN_F}°F"
+                f"; low {low}°F). Game cancelled due to weather."
+            ),
+            "temp_cold",
+        )
+
+    if moderate_rain:
+        return (
+            "cancel",
+            summary + (
+                f"\n→ RAIN likely ({len(moderate_rain)} of {len(relevant)} hours "
+                f"at ≥{RAIN_POP_MODERATE}% PoP with precip in forecast). "
                 "Game cancelled due to weather."
             ),
             "rain",
         )
 
-    if bad_temp_hours:
-        temps = [r["temp"] for r in bad_temp_hours if r["temp"] is not None]
-        return (
-            "cancel",
-            summary + (
-                f"\n→ Temperature outside {TEMP_MIN_F}-{TEMP_MAX_F}°F "
-                f"({len(bad_temp_hours)} of {len(relevant)} hours flagged"
-                + (f"; range {min(temps)}-{max(temps)}°F" if temps else "")
-                + "). Game cancelled due to weather."
-            ),
-            "temp",
-        )
-
     return (
         "proceed",
         summary + (
-            f"\n→ no rain expected and temps within {TEMP_MIN_F}-{TEMP_MAX_F}°F "
+            f"\n→ no rain expected and temps within {TEMP_MIN_F}-{TEMP_HOT_F}°F "
             "— weather OK for game."
         ),
         "",
@@ -309,6 +398,58 @@ def weather_check_today() -> tuple[str, str, str]:
     import datetime as _dt
 
     return weather_check_for_date(_dt.datetime.now().astimezone().date())
+
+
+def weather_image_path(cancel_reason: str) -> str | None:
+    """Absolute path to the weather illustration for rain / hot / cold."""
+    key = cancel_reason if cancel_reason in WEATHER_IMAGE_FILES else None
+    if not key:
+        return None
+    path = os.path.join(WEATHER_IMAGES_DIR, WEATHER_IMAGE_FILES[key])
+    return path if os.path.isfile(path) else None
+
+
+def weather_cancel_message(cancel_reason: str) -> str:
+    """Build the WhatsApp cancellation text for the given weather reason."""
+    window = (
+        f"{WEATHER_WINDOW_START_HOUR % 12 or 12}:00 "
+        f"{'PM' if WEATHER_WINDOW_START_HOUR >= 12 else 'AM'}"
+        f"–{WEATHER_WINDOW_END_HOUR % 12 or 12}:00 "
+        f"{'PM' if WEATHER_WINDOW_END_HOUR >= 12 else 'AM'}"
+    )
+    if cancel_reason == "rain":
+        return CANCEL_MSG
+    if cancel_reason == "temp_hot":
+        peak = _last_weather_peak_f
+        peak_note = f" (peak {peak}°F)" if peak is not None else ""
+        if HOT_CANCEL_MSG != DEFAULT_HOT_CANCEL_MSG:
+            return HOT_CANCEL_MSG
+        return (
+            f"🔥 Very hot outside{peak_note} — not optimal weather for volleyball "
+            f"(forecast above {TEMP_HOT_F}°F between {window}).\n"
+            "Volleyball cancelled this Friday. We'll regroup next week."
+        )
+    if cancel_reason == "temp_cold":
+        low = _last_weather_low_f
+        low_note = f" (low {low}°F)" if low is not None else ""
+        if COLD_CANCEL_MSG != DEFAULT_COLD_CANCEL_MSG:
+            return COLD_CANCEL_MSG
+        return (
+            f"🥶 Very cold outside{low_note} — not optimal weather for volleyball "
+            f"(forecast below {TEMP_MIN_F}°F between {window}).\n"
+            "Volleyball cancelled this Friday. We'll regroup next week."
+        )
+    return TEMP_CANCEL_MSG
+
+
+def status_detail_for_weather_cancel(cancel_reason: str) -> str:
+    if cancel_reason == "rain":
+        return "weather_rain"
+    if cancel_reason == "temp_hot":
+        return "weather_temp_hot"
+    if cancel_reason == "temp_cold":
+        return "weather_temp_cold"
+    return "weather_temp"
 
 
 def list_tabs() -> list:
@@ -564,6 +705,28 @@ class Tab:
         except Exception:
             pass
 
+    def enable_page(self) -> None:
+        try:
+            self._call("Page.enable", timeout=5)
+        except Exception as exc:
+            log(f"Page.enable: {exc}")
+
+    def set_file_chooser_intercept(self, enabled: bool) -> None:
+        self.enable_page()
+        self._call(
+            "Page.setInterceptFileChooserDialog",
+            {"enabled": enabled},
+            timeout=5,
+        )
+
+    def accept_file_chooser(self, paths: list[str]) -> None:
+        abs_paths = [os.path.abspath(p) for p in paths]
+        self._call(
+            "Page.handleFileChooser",
+            {"action": "accept", "files": abs_paths},
+            timeout=15,
+        )
+
 
 # ---- Selectors -------------------------------------------------------------
 # All selectors are written defensively — each step has multiple fallbacks.
@@ -756,6 +919,26 @@ S_POLL_MENU_ITEM = (
     "[...document.querySelectorAll('li, div[role=\"button\"], button')]"
     ".find(e=>e.offsetParent!==null && /^(create\\s*)?poll$/i.test((e.innerText||'').trim()))"
 )
+# Photos & videos (attach menu)
+S_PHOTOS_MENU_ITEM = (
+    "[...document.querySelectorAll('li, div[role=\"button\"], button, span')]"
+    ".find(e=>{"
+    "  if(e.offsetParent===null) return false;"
+    "  const t=(e.innerText||e.getAttribute('aria-label')||'').trim();"
+    "  return /photos?\\s*(and|&)\\s*videos?/i.test(t) || /^photos?\\s*&\\s*videos?$/i.test(t);"
+    "})"
+)
+S_MEDIA_SEND_BUTTON = (
+    "(()=>{"
+    "const cands=[...document.querySelectorAll("
+    "'[data-testid=\"send\"], span[data-icon=\"send\"], [aria-label=\"Send\"]'"
+    ")].filter(e=>e.offsetParent!==null);"
+    "for(const el of cands){"
+    "  const btn=el.closest('button,[role=\"button\"]')||el;"
+    "  if(btn && btn.offsetParent!==null) return btn;"
+    "}"
+    "return null;})()"
+)
 # Poll dialog elements
 S_POLL_DIALOG = "document.querySelector('div[role=\"dialog\"]')"
 S_POLL_QUESTION = (
@@ -934,22 +1117,26 @@ def run_turnout_check(tab: Tab) -> int:
             weather_decision = "proceed"
 
     if weather_decision == "cancel":
-        cancel_msg = CANCEL_MSG if cancel_reason == "rain" else TEMP_CANCEL_MSG
+        cancel_msg = weather_cancel_message(cancel_reason)
         log("=" * 60)
-        if cancel_reason == "temp":
+        if cancel_reason == "temp_hot":
             log(
-                "TEMP OUT OF RANGE — sending weather cancellation message "
+                "TOO HOT — sending weather cancellation with image "
+                "(skipping turnout poll read)"
+            )
+        elif cancel_reason == "temp_cold":
+            log(
+                "TOO COLD — sending weather cancellation with image "
                 "(skipping turnout poll read)"
             )
         else:
             log(
-                "RAINY DAY — sending weather cancellation message "
+                "RAINY DAY — sending weather cancellation with image "
                 "(skipping turnout poll read)"
             )
         log("=" * 60)
-        send_text_message(tab, cancel_msg)
-        detail = "weather_rain" if cancel_reason == "rain" else "weather_temp"
-        return _finish_turnout(detail)
+        send_weather_cancel_message(tab, cancel_reason, cancel_msg)
+        return _finish_turnout(status_detail_for_weather_cancel(cancel_reason))
 
     if weather_decision == "proceed":
         log("weather OK for today's game window — checking poll turnout")
@@ -1178,6 +1365,73 @@ def open_contact_chat(tab):
     tab.wait(f"!!({S_CHAT_OPEN_HEADER})", f"chat header for {CONTACT!r}", timeout=40 if SCHEDULED else 25)
 
 
+def send_image_with_caption(tab: Tab, image_path: str, caption: str) -> None:
+    """Attach a photo from disk and send it with an optional caption."""
+    if not os.path.isfile(image_path):
+        raise FileNotFoundError(image_path)
+
+    tab.set_file_chooser_intercept(True)
+    try:
+        tab.click(S_ATTACH_BUTTON, "attach (paperclip)")
+        time.sleep(0.6)
+        tab.wait(f"!!({S_PHOTOS_MENU_ITEM})", "Photos & videos menu item", timeout=10)
+        tab.click(S_PHOTOS_MENU_ITEM, "Photos & videos")
+        time.sleep(0.3)
+        tab.accept_file_chooser([image_path])
+        time.sleep(2.0 if SCHEDULED else 1.2)
+
+        if caption:
+            try:
+                tab.wait(f"!!({S_MESSAGE_COMPOSER})", "image caption composer", timeout=12)
+                tab.focus(S_MESSAGE_COMPOSER, "image caption composer")
+                tab.eval(
+                    "const el=document.activeElement;"
+                    "if(el){document.execCommand('selectAll', false, null);"
+                    "document.execCommand('delete', false, null);"
+                    "el.dispatchEvent(new Event('input',{bubbles:true}));}"
+                    "return true;"
+                )
+                time.sleep(0.2)
+                tab.insert_text(caption)
+                time.sleep(0.5)
+            except Exception as exc:
+                log(f"caption on image failed ({exc}) — sending image without caption")
+
+        if not SEND:
+            log(
+                f"DRY-RUN: image selected {image_path!r}"
+                + (f" caption={caption!r}" if caption else "")
+                + " — not clicking Send."
+            )
+            return
+
+        tab.wait(f"!!({S_MEDIA_SEND_BUTTON})", "image Send button", timeout=15)
+        tab.click(S_MEDIA_SEND_BUTTON, "Send image")
+        time.sleep(0.8)
+        log("✓ image message sent")
+    finally:
+        try:
+            tab.set_file_chooser_intercept(False)
+        except Exception:
+            pass
+
+
+def send_weather_cancel_message(tab: Tab, cancel_reason: str, text: str | None = None) -> None:
+    """Send weather cancellation with a matching illustration when available."""
+    msg = text or weather_cancel_message(cancel_reason)
+    image = weather_image_path(cancel_reason)
+    if image:
+        log(f"weather cancel ({cancel_reason}): sending image {os.path.basename(image)}")
+        try:
+            send_image_with_caption(tab, image, msg)
+            return
+        except Exception as exc:
+            log(f"weather image send failed ({exc}) — falling back to text only")
+    else:
+        log(f"weather image missing for {cancel_reason!r} — text only")
+    send_text_message(tab, msg)
+
+
 def send_text_message(tab, text: str) -> None:
     """Type `text` into the open chat's composer and click Send."""
     tab.wait(f"!!({S_MESSAGE_COMPOSER})", "message composer", timeout=15)
@@ -1308,14 +1562,15 @@ def main() -> int:
         return 0
 
     cancelled = weather_decision == "cancel"
-    cancel_msg = CANCEL_MSG if cancel_reason == "rain" else TEMP_CANCEL_MSG
 
     if cancelled:
         log("=" * 60)
-        if cancel_reason == "temp":
-            log("TEMP OUT OF RANGE — will send cancellation message instead of poll.")
+        if cancel_reason == "temp_hot":
+            log("TOO HOT — will send weather cancellation with image instead of poll.")
+        elif cancel_reason == "temp_cold":
+            log("TOO COLD — will send weather cancellation with image instead of poll.")
         else:
-            log("RAINY DAY — will send cancellation message instead of poll.")
+            log("RAINY DAY — will send weather cancellation with image instead of poll.")
         log("=" * 60)
 
     # CDP sanity (Edge or Chrome — any Chromium browser on port 9222)
@@ -1336,7 +1591,7 @@ def main() -> int:
         open_contact_chat(tab)
 
         if cancelled:
-            send_text_message(tab, cancel_msg)
+            send_weather_cancel_message(tab, cancel_reason)
         else:
             send_poll(tab)
 

@@ -74,8 +74,9 @@
     <h2>Decision logic</h2>
     <div class="flow">1. schedule_gate_turnout.py — Friday? in season? 3:00–5:00 PM? message not already sent today?
 2. weather_check_today() — today's 4–8 PM at Lake Hiawatha
-   → if RAIN: send CANCEL_MSG (rain)
-   → if temp outside 65–92°F: send TEMP_CANCEL_MSG
+   → if RAIN: send CANCEL_MSG + rainy image
+   → if temp &gt; 90°F: send HOT_CANCEL_MSG + hot image
+   → if temp &lt; 65°F: send COLD_CANCEL_MSG + cold image
 3. If weather OK: open Volleyball Friday chat, read latest poll Yes / No counts
    → if Yes ≥ 6: send GO_MSG (all-clear — let's play)
    → if Yes &lt; 6: send LOW_TURNOUT_MSG
@@ -86,8 +87,9 @@
     <h2>Messages sent</h2>
     <table>
         <tr><th>Condition</th><th>Message</th><th>Env override</th></tr>
-        <tr><td>Rain expected (game window)</td><td>🌧️ Rainy day — volleyball cancelled…</td><td><code>CANCEL_MSG</code></td></tr>
-        <tr><td>Temp outside 65–92°F</td><td>🌡️ Temperature outside playable range…</td><td><code>TEMP_CANCEL_MSG</code></td></tr>
+        <tr><td>Rain expected (game window)</td><td>🌧️ Rainy day — volleyball cancelled… + rainy image</td><td><code>CANCEL_MSG</code></td></tr>
+        <tr><td>Temp above 90°F (4–8 PM)</td><td>🔥 Very hot — not optimal weather… + hot image</td><td><code>HOT_CANCEL_MSG</code></td></tr>
+        <tr><td>Temp below 65°F (4–8 PM)</td><td>🥶 Very cold — not optimal weather… + cold image</td><td><code>COLD_CANCEL_MSG</code></td></tr>
         <tr><td>Weather OK, Yes &lt; 6</td><td>Today's volleyball game CANCELED : Not enough people…</td><td><code>LOW_TURNOUT_MSG</code></td></tr>
         <tr><td>Weather OK, Yes ≥ 6</td><td>✅ Everything looks good! Both weather and turnout are good — Let's play!</td><td><code>GO_MSG</code></td></tr>
     </table>
