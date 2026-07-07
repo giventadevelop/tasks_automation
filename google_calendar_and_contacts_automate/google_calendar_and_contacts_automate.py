@@ -1,6 +1,7 @@
 import os
 import sys
 import base64
+import mimetypes
 import requests
 import json
 import calendar
@@ -1181,55 +1182,184 @@ def create_contact(contact_details):
         logging.error(f"Error creating contact: {str(e)}")
         raise
 
+
+_CALENDAR_IMAGE_FILETYPES = [
+    ("Image files", "*.png *.jpg *.jpeg *.jfif *.jpe *.gif *.bmp *.webp"),
+    ("JPEG / JFIF", "*.jpg *.jpeg *.jfif *.jpe"),
+    ("PNG", "*.png"),
+    ("All files", "*.*"),
+]
+
+
+def _image_media_type(image_path):
+    """MIME type for Claude vision / calendar attachments (JFIF → image/jpeg)."""
+    ext = os.path.splitext(image_path)[1].lower()
+    by_ext = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".jfif": "image/jpeg",
+        ".jpe": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+    }
+    if ext in by_ext:
+        return by_ext[ext]
+    guessed, _ = mimetypes.guess_type(image_path)
+    return guessed or "image/jpeg"
+
+
+def _pick_calendar_image_file(title="Select image file"):
+    return filedialog.askopenfilename(title=title, filetypes=_CALENDAR_IMAGE_FILETYPES)
+
+
 def get_event_input():
+    """Ask how to supply event details: typed text vs image to parse with AI."""
     root = tk.Tk()
     root.withdraw()
+    dialog = tk.Toplevel(root)
+    dialog.title("New Calendar Entry")
+    dialog.configure(bg="#ecf0f1")
+    dialog.resizable(False, False)
 
-    choice = messagebox.askquestion("Input Method", "Do you want to enter event details as text?")
+    frame = tk.Frame(dialog, bg="#ecf0f1", padx=20, pady=16)
+    frame.pack(fill="both", expand=True)
 
-    if choice == 'yes':
-        dialog = tk.Toplevel()
-        dialog.title("Event Details")
-        text_area = tk.Text(dialog, width=60, height=20)
-        text_area.pack(padx=10, pady=10)
+    tk.Label(
+        frame,
+        text="How do you want to add this event?",
+        bg="#ecf0f1",
+        font=("Helvetica", 12, "bold"),
+    ).pack(anchor="w", pady=(0, 8))
 
-        event_text = ""
+    tk.Label(
+        frame,
+        text=(
+            "Choose one:\n"
+            "• Text — type or paste details (flyer text, message, notes)\n"
+            "• Image — upload a photo or screenshot (e.g. WhatsApp .jfif) "
+            "and AI will read it"
+        ),
+        bg="#ecf0f1",
+        font=("Helvetica", 10),
+        justify="left",
+        wraplength=420,
+    ).pack(anchor="w", pady=(0, 12))
 
-        def on_ok():
-            nonlocal event_text
-            event_text = text_area.get("1.0", tk.END).strip()
-            dialog.destroy()
+    input_mode = tk.StringVar(value="text")
 
-        ok_button = tk.Button(dialog, text="OK", command=on_ok)
-        ok_button.pack(pady=10)
+    modes = tk.Frame(frame, bg="#ecf0f1")
+    modes.pack(anchor="w", pady=(0, 8))
+    tk.Radiobutton(
+        modes,
+        text="Type or paste text only",
+        variable=input_mode,
+        value="text",
+        bg="#ecf0f1",
+        font=("Helvetica", 10),
+        anchor="w",
+    ).pack(anchor="w")
+    tk.Radiobutton(
+        modes,
+        text="Upload an image to parse (photo / screenshot / WhatsApp image)",
+        variable=input_mode,
+        value="image",
+        bg="#ecf0f1",
+        font=("Helvetica", 10),
+        anchor="w",
+    ).pack(anchor="w")
 
-        dialog.geometry("500x650")
-        dialog.wait_window()
+    result = {"value": None}
 
-        if not event_text:
-            print("No event details entered. Exiting.")
-            sys.exit(1)
+    def on_continue():
+        result["value"] = input_mode.get()
+        dialog.destroy()
 
-        image_choice = messagebox.askquestion("Image Upload", "Do you want to upload an image for this event?")
-        image_path = None
-        if image_choice == 'yes':
-            image_path = filedialog.askopenfilename(
-                title="Select Image File",
-                filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
-            )
+    def on_cancel():
+        dialog.destroy()
 
-        return "text", event_text, image_path
-    else:
-        image_path = filedialog.askopenfilename(
-            title="Select Image File",
-            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
+    btn_row = tk.Frame(frame, bg="#ecf0f1")
+    btn_row.pack(pady=(12, 0))
+    tk.Button(
+        btn_row, text="Continue", width=12, bg="#3498db", fg="white", command=on_continue,
+    ).pack(side="left", padx=4)
+    tk.Button(btn_row, text="Cancel", width=10, command=on_cancel).pack(side="left", padx=4)
+
+    dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+    dialog.update_idletasks()
+    w, h = dialog.winfo_width(), dialog.winfo_height()
+    sw, sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
+    dialog.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+    dialog.grab_set()
+    dialog.wait_window()
+    root.destroy()
+
+    mode = result["value"]
+    if not mode:
+        print("Calendar entry cancelled.")
+        sys.exit(0)
+
+    if mode == "image":
+        root = tk.Tk()
+        root.withdraw()
+        image_path = _pick_calendar_image_file(
+            title="Select image to parse (JPEG, JFIF, PNG, …)",
         )
+        root.destroy()
         if not image_path:
             print("No file selected. Exiting.")
             sys.exit(1)
-
         print(f"Selected file: {image_path}")
         return "image", None, image_path
+
+    # Text path
+    root = tk.Tk()
+    root.withdraw()
+    text_dialog = tk.Toplevel(root)
+    text_dialog.title("Event details — type or paste")
+    tk.Label(
+        text_dialog,
+        text="Enter or paste event details (name, date, time, venue, contacts):",
+        font=("Helvetica", 10),
+    ).pack(padx=10, pady=(10, 4), anchor="w")
+    text_area = tk.Text(text_dialog, width=60, height=20)
+    text_area.pack(padx=10, pady=4)
+
+    event_text = ""
+
+    def on_ok():
+        nonlocal event_text
+        event_text = text_area.get("1.0", tk.END).strip()
+        text_dialog.destroy()
+
+    ok_button = tk.Button(text_dialog, text="OK", command=on_ok)
+    ok_button.pack(pady=10)
+    text_dialog.geometry("500x650")
+    text_dialog.grab_set()
+    text_dialog.wait_window()
+    root.destroy()
+
+    if not event_text:
+        print("No event details entered. Exiting.")
+        sys.exit(1)
+
+    attach = messagebox.askyesno(
+        "Attach image to calendar?",
+        "Also attach an image file to this Google Calendar event?\n\n"
+        "Choose Yes only if you want the file stored with the event "
+        "(optional). This is separate from parsing text above.",
+    )
+    image_path = None
+    if attach:
+        root = tk.Tk()
+        root.withdraw()
+        image_path = _pick_calendar_image_file(
+            title="Select image to attach to calendar event",
+        )
+        root.destroy()
+
+    return "text", event_text, image_path
 
 
 def encode_image(image_path):
@@ -1272,6 +1402,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 
         if input_type == "image":
             base64_image = encode_image(image_path)
+            media_type = _image_media_type(image_path)
             message = client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=1000,
@@ -1287,7 +1418,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                                 "type": "image",
                                 "source": {
                                     "type": "base64",
-                                    "media_type": "image/jpeg",
+                                    "media_type": media_type,
                                     "data": base64_image
                                 }
                             }
