@@ -20,6 +20,7 @@ from calendar_app_paths import (
     task_batch_path,
     task_batch_workdir,
 )
+from prompt_library import show_prompt_library
 
 # Set up logging
 logging.basicConfig(
@@ -478,7 +479,7 @@ def show_initial_dialog():
     screen_width = dialog.winfo_screenwidth()
     screen_height = dialog.winfo_screenheight()
     dialog_width = int(screen_width * 3/8)
-    dialog_height = int(screen_height * 0.62)  # room for task buttons including WhatsApp turnout
+    dialog_height = int(screen_height * 0.72)  # room for task buttons + prompt library
 
     # Custom title bar style
     title_frame = tk.Frame(dialog, bg='#2c3e50', height=40)
@@ -535,6 +536,10 @@ def show_initial_dialog():
 
     def on_delete_calendar():
         result['choice'] = 'delete_calendar'
+        dialog.destroy()
+
+    def on_prompt_library():
+        result['choice'] = 'prompt_library'
         dialog.destroy()
 
     def on_exit():
@@ -594,6 +599,17 @@ def show_initial_dialog():
                          activebackground='#1abc9c',
                          command=on_prune_transcripts, **button_style)
     prune_btn.pack(pady=10)
+
+    prompt_lib_btn = tk.Button(
+        content_frame,
+        text="Prompt Library",
+        bg='#1abc9c',
+        fg='white',
+        activebackground='#16a085',
+        command=on_prompt_library,
+        **button_style,
+    )
+    prompt_lib_btn.pack(pady=10)
 
     exit_btn = tk.Button(content_frame, text="Exit",
                          bg='#95a5a6', fg='white',
@@ -2074,6 +2090,9 @@ def main():
 
             elif choice == 'delete_calendar':
                 show_delete_calendar_dialog()
+
+            elif choice == 'prompt_library':
+                show_prompt_library()
 
             elif choice == 'contacts':
                 # Get contact input

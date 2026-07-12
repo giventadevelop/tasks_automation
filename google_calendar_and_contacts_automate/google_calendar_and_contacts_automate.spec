@@ -38,6 +38,7 @@ if os.path.isfile(_laundry_py):
 # bundle always contains them. Requires: pip install google-api-python-client google-auth-oauthlib ...
 _hidden = [
     'calendar_app_paths',
+    'prompt_library',
     'jproperties',
     'oauth_setup',
     'selenium',
