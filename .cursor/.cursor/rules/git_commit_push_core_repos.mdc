@@ -1,0 +1,33 @@
+---
+description: Safe commit and push workflow for core repositories
+globs: **/*
+alwaysApply: false
+---
+
+- **Scope**
+  - Applies when the user asks to commit and push local repository changes.
+  - Use this together with [git_local_push.mdc](mdc:.cursor/rules/git_local_push.mdc).
+
+- **Inspect Before Staging**
+  - Always inspect tracked, unstaged, staged, and untracked files before staging:
+    ```powershell
+git status --short
+git diff --no-ext-diff
+git diff --cached --no-ext-diff
+    ```
+
+- **Safe Auto-Staging Rule**
+  - If the user asks to commit/push and there are unstaged or untracked files, add only files that are clearly safe and relevant to the requested work.
+  - Safe examples: source code, docs, scripts, tests, `.mdc` rules, non-secret config templates, and small static assets intentionally added for the feature.
+  - Never stage files likely to contain secrets or keys:
+    - `.env*`, credentials JSON, service-account keys, private keys, certificates
+    - `token.pickle`, OAuth/session caches, auth state, cookies
+    - runtime logs that may include API tokens, OAuth payloads, or request/response bodies
+  - Never stage generated noise unless explicitly requested and safe:
+    - `__pycache__/`, `*.pyc`, `build/`, `dist/`, `.idea/`, local temp files, generated binaries
+  - If a file is ambiguous, leave it unstaged and call it out in the response.
+
+- **Commit and Push**
+  - Use a concise conventional commit message matching repository history.
+  - Push only after the commit succeeds and the user asked for push.
+  - Do not use force push or destructive git commands unless explicitly requested.

@@ -20,6 +20,16 @@ git checkout -b <new-branch-name>
 
 - **Stage → Commit → Push (Windows PowerShell)**
   - PowerShell does not support `&&` as a command separator by default. Run each command on its own line.
+  - **Before staging, inspect all unstaged and untracked files**:
+    ```powershell
+git status --short
+git diff --no-ext-diff
+    ```
+  - **Stage safe files automatically when requested to commit/push**:
+    - Add modified and untracked files that are clearly source, docs, scripts, tests, or configuration needed for the requested change.
+    - Do **not** stage files that may contain secrets/keys/tokens, including `.env*`, `token.pickle`, credentials JSON, service-account files, API keys, private keys, certificates, generated auth caches, or runtime logs containing OAuth/API output.
+    - Do **not** stage caches or build artifacts such as `__pycache__/`, `*.pyc`, `build/`, `dist/`, or generated binaries unless the user explicitly asks for that artifact and it contains no secrets.
+    - If a file is ambiguous, leave it unstaged and mention it to the user.
   - **Stage files**:
     ```powershell
 git add <path1> <path2> <pathN>

@@ -1132,6 +1132,11 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
         logging.error(f"Error extracting contact details: {str(e)}")
         raise
 
+@retry(
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=2, min=3, max=20),
+    reraise=True,
+)
 def create_contact(contact_details):
     try:
         # Prepare phone numbers
@@ -1175,7 +1180,11 @@ def create_contact(contact_details):
         logging.info("Creating contact in personal Google Contacts")
         logging.info(f"Contact body: {json.dumps(contact_body, indent=2)}")
 
-        # Create the contact using People API with person fields
+        # Create the contact using People API with person fields.
+        # Google OAuth/token refresh occasionally fails on Windows with
+        # WinError 10053 ("connection aborted by software on host"). Tenacity
+        # retries this function so a transient local/network abort does not
+        # immediately fail the dashboard after the AI extraction already worked.
         result = people_service.people().createContact(
             body=contact_body,
             personFields='names,emailAddresses,phoneNumbers,organizations,biographies'
@@ -2095,19 +2104,30 @@ def main():
                 show_prompt_library()
 
             elif choice == 'contacts':
-                # Get contact input
-                contact_text = get_contact_input()
+                try:
+                    # Get contact input
+                    contact_text = get_contact_input()
 
-                # Extract and process contact details
-                contact_details = extract_contact_details(contact_text)
+                    # Extract and process contact details
+                    contact_details = extract_contact_details(contact_text)
 
-                # Create the contact and get the URL
-                result, contact_url = create_contact(contact_details)
+                    # Create the contact and get the URL
+                    result, contact_url = create_contact(contact_details)
 
-                # Show success message
-                show_success_dialog("Success", "Contact created successfully!")
-                if contact_url:
-                    show_contact_url_dialog("Contact URL", f"View contact at:\n{contact_url}")
+                    # Show success message
+                    show_success_dialog("Success", "Contact created successfully!")
+                    if contact_url:
+                        show_contact_url_dialog("Contact URL", f"View contact at:\n{contact_url}")
+                except Exception as e:
+                    logging.error(f"Contact entry failed: {e}")
+                    messagebox.showerror(
+                        "Contact Entry Failed",
+                        "Could not create the Google contact.\n\n"
+                        f"{str(e)}\n\n"
+                        "If this was a network/token refresh issue, try Contact Entry again. "
+                        "The app now retries transient Google API failures before showing this message.",
+                    )
+                    continue
 
             elif choice == 'laundry':
                 tasks_root = resolved_tasks_automation_root()
