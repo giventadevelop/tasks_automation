@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 call "%~dp0_env.bat"
-REM Read latest poll in chat; send low-turnout cancel if Yes votes < MIN_PLAYERS (default 6).
+REM Friday turnout (same as 3 PM scheduled job): weather + poll → go / weather-cancel / low-turnout.
 
 if not "%SKIP_PROMPTS%"=="1" (
     set "CONTACT="
@@ -20,7 +20,7 @@ if "%SKIP_PROMPTS%"=="1" (
     goto after_prompts
 )
 
-echo --- WhatsApp turnout check (read poll, cancel if not enough Yes votes) ---
+echo --- Friday turnout message (weather + poll → go / cancel) ---
 echo.
 set "CONTACT_INPUT="
 set /p "CONTACT_INPUT=Contact / group name [Enter = Volleyball Friday]: "
@@ -31,7 +31,7 @@ if "%CONTACT_INPUT%"=="" (
 )
 
 set "SEND_INPUT="
-set /p "SEND_INPUT=Press Enter to SEND cancel if needed. Type CANCEL for dry-run: "
+set /p "SEND_INPUT=Press Enter to SEND the go/cancel message. Type CANCEL for dry-run: "
 if /I "%SEND_INPUT%"=="CANCEL" (
     set "SEND="
 ) else (

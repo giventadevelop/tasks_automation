@@ -13,13 +13,17 @@ echo ============================================================
 echo.
 
 set "PY="
-where py >nul 2>&1 && set "PY=py -3"
+REM Prefer 3.12 for PyInstaller stability (3.14 can show "Failed to load module…")
+py -3.12 -c "import sys" >nul 2>&1 && set "PY=py -3.12"
+if not defined PY py -3.11 -c "import sys" >nul 2>&1 && set "PY=py -3.11"
+if not defined PY where py >nul 2>&1 && set "PY=py -3"
 if not defined PY where python >nul 2>&1 && set "PY=python"
 if not defined PY (
     echo [FAIL] Python 3 not found.
     pause
     exit /b 1
 )
+echo [ok] Build Python: %PY%
 
 echo [1/3] Installing build dependencies...
 %PY% -m pip install -q google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties pyinstaller websocket-client

@@ -69,6 +69,13 @@ try:
     _datas.extend(collect_data_files('googleapiclient'))
 except Exception:
     pass
+try:
+    # Mozilla CA bundle for HTTPS (Google / Anthropic) when frozen as onefile exe.
+    _datas.extend(collect_data_files('certifi'))
+except Exception:
+    pass
+if 'certifi' not in _hidden:
+    _hidden.append('certifi')
 
 a = Analysis(
     ['google_calendar_and_contacts_automate.py'],

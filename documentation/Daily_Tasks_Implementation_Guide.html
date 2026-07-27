@@ -72,7 +72,7 @@
         <div class="section-intro" id="overview">
             <h2 style="margin-top:0;color:#0d3b66;">What you are shipping</h2>
             <ul>
-                <li><strong>Main app:</strong> Tkinter dashboard — Calendar, Contacts, Laundry, <strong>WhatsApp Poll</strong>, <strong>Volleyball Low Turnout</strong>, YouTube tools.</li>
+                <li><strong>Main app:</strong> Tkinter dashboard — Calendar, Contacts, Laundry, <strong>WhatsApp Poll</strong>, <strong>Friday Turnout (go/cancel)</strong>, YouTube tools.</li>
                 <li><strong>Packaging:</strong> PyInstaller <strong>onefile</strong> → <code>calendar_automate.exe</code> (windowed, no console).</li>
                 <li><strong>Satellite automations:</strong> Stay as folders under <code>&lt;REPO_ROOT&gt;</code>; the frozen .exe launches their <code>.bat</code> files in a new console — it is not a Python interpreter for those scripts.</li>
             </ul>
@@ -178,7 +178,7 @@
                 <li>The shortcut targets <code class="script-name">launch_daily_tasks_dashboard.bat</code> (production .exe when built).</li>
             </ol>
             <div class="info">
-                <strong>Dashboard WhatsApp buttons:</strong> <strong>WhatsApp Poll (manual)</strong> and <strong>Volleyball Low Turnout (Friday)</strong> launch <code>scripts_batch_files\whatsapp_poll\*.bat</code>. Each calls <code>start_edge_cdp.bat</code> — if Edge is closed, it starts Edge with <code>web.whatsapp.com</code> in profile <code>C:\edge-cdp</code>.
+                <strong>Dashboard WhatsApp buttons:</strong> <strong>WhatsApp Poll (manual)</strong> and <strong>Friday Turnout (go/cancel)</strong> launch <code>scripts_batch_files\whatsapp_poll\*.bat</code>. Each calls <code>start_edge_cdp.bat</code> — if Edge is closed, it starts Edge with <code>web.whatsapp.com</code> in profile <code>C:\edge-cdp</code>.
             </div>
             <div class="warning">
                 <strong>The .exe is the dashboard only.</strong> WhatsApp, laundry, and YouTube still need their repo folders and Python for the <code>.bat</code> scripts. Keep the full <code>tasks_automation</code> tree on disk.
@@ -223,8 +223,8 @@
                         <td><code class="script-name">run_whatsapp_poll_scheduled.bat</code> — Thursday hourly 8 AM–11 PM; retries until success; weather + poll</td>
                     </tr>
                     <tr>
-                        <td><strong>Volleyball Low Turnout</strong></td>
-                        <td>GUI: <strong>check latest poll</strong> (&lt; 6 Yes → cancel) or <strong>send cancel now</strong>; runs <code class="script-name">run_whatsapp_turnout_check.bat</code> or <code class="script-name">run_whatsapp_low_turnout_cancel.bat</code></td>
+                        <td><strong>Friday Turnout (go/cancel)</strong></td>
+                        <td>GUI: <strong>full Friday check</strong> (weather + poll → go / weather-cancel / low-turnout) or <strong>force low-turnout cancel</strong>; runs <code class="script-name">run_whatsapp_turnout_check.bat</code> or <code class="script-name">run_whatsapp_low_turnout_cancel.bat</code></td>
                         <td><code class="script-name">run_whatsapp_turnout_check_scheduled.bat</code> — Friday 3 PM + 4 PM retry; reads poll; weather gate</td>
                     </tr>
                     <tr>
@@ -244,8 +244,8 @@
     → run_whatsapp_poll.bat (SKIP_PROMPTS=1, CONTACT, SEND env)
     → start_edge_cdp.bat → whatsapp_poll.py
 
-Dashboard → Volleyball Low Turnout button
-    → Tk dialog: check poll vs force cancel + send/dry-run
+Dashboard → Friday Turnout (go/cancel) button
+    → Tk dialog: full Friday check vs force cancel + send/dry-run
     → run_whatsapp_turnout_check.bat OR run_whatsapp_low_turnout_cancel.bat
 
 Dashboard → Laundry button

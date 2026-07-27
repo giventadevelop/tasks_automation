@@ -67,6 +67,20 @@ def _get_writable_token_path(property_dir):
     return os.path.join(property_dir, 'token.pickle')
 
 
+def _candidate_token_paths(property_dir):
+    """Prefer the writable path; also accept AppData token so script/exe share login."""
+    primary = _get_writable_token_path(property_dir)
+    paths = [primary]
+    appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+    appdata_token = os.path.join(appdata, 'tasks_automation', 'token.pickle')
+    if appdata_token not in paths:
+        paths.append(appdata_token)
+    prop_token = os.path.join(property_dir, 'token.pickle')
+    if prop_token not in paths:
+        paths.append(prop_token)
+    return paths
+
+
 def get_oauth_credentials():
     """
     Get valid credentials: either service-account impersonation (no browser)
@@ -105,12 +119,23 @@ def get_oauth_credentials():
     token_path = _get_writable_token_path(property_dir)
     creds = None
 
-    if os.path.exists(token_path):
+    for candidate in _candidate_token_paths(property_dir):
+        if not os.path.exists(candidate):
+            continue
         try:
-            with open(token_path, 'rb') as token:
+            with open(candidate, 'rb') as token:
                 creds = pickle.load(token)
+            token_path = candidate
+            break
+        except ModuleNotFoundError as e:
+            # Token pickled with a different google-auth version (e.g. py 3.14 vs 3.12).
+            print(
+                f"Could not load token from {candidate}: missing module {e.name}. "
+                "Upgrade google-auth (pip install -U google-auth) or sign in once more."
+            )
+            creds = None
         except Exception as e:
-            print(f"Could not load token: {e}")
+            print(f"Could not load token from {candidate}: {e}")
             creds = None
 
     if not creds or not creds.valid:

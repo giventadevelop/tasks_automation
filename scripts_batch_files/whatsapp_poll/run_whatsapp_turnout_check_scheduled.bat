@@ -35,6 +35,7 @@ echo [%date% %time%] schedule gate: proceed>>"%LOG_FILE%"
 
 call "%~dp0start_edge_cdp.bat" >>"%LOG_FILE%" 2>&1
 set EDGE_RC=!ERRORLEVEL!
+echo [%date% %time%] start_edge_cdp exit=!EDGE_RC!>>"%LOG_FILE%"
 if !EDGE_RC! NEQ 0 (
     echo [%date% %time%] FAIL: Edge CDP>>"%LOG_FILE%"
     %PY% -u "%MODULE_ROOT%\schedule_gate_turnout.py" --mark-failed "edge_cdp_failed">>"%LOG_FILE%" 2>&1
@@ -43,7 +44,9 @@ if !EDGE_RC! NEQ 0 (
 )
 
 echo [%date% %time%] edge warmup 10s...>>"%LOG_FILE%"
-timeout /t 10 /nobreak >nul
+REM ping delay survives Task Scheduler / redirected stdin; timeout often does not
+ping -n 11 127.0.0.1 >nul
+
 
 %PY% -u -c "import websocket" >nul 2>&1
 if errorlevel 1 (

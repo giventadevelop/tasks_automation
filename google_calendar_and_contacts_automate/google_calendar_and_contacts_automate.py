@@ -2,14 +2,38 @@ import os
 import sys
 import base64
 import mimetypes
-import requests
 import json
 import calendar
+import re
+import threading
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, unquote, urlparse
 import logging
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
 from jproperties import Properties
+
+# Machine/user env may point SSL_CERT_FILE at a custom bundle (e.g. Hermes) that is
+# incomplete for Google APIs. Prefer certifi's Mozilla CA store for this app.
+def _configure_ssl_certs():
+    try:
+        import certifi
+        ca_file = certifi.where()
+        if not ca_file or not os.path.isfile(ca_file):
+            return
+        previous = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
+        os.environ["SSL_CERT_FILE"] = ca_file
+        os.environ["REQUESTS_CA_BUNDLE"] = ca_file
+        if previous and os.path.normcase(previous) != os.path.normcase(ca_file):
+            # Logging may not be configured yet; print is fine for early bootstrap.
+            print(f"[ssl] Using certifi CA bundle (overrode: {previous})")
+    except Exception as e:
+        print(f"[ssl] Could not configure certifi CA bundle: {e}")
+
+
+_configure_ssl_certs()
+
+import requests
 import httpx
 
 from calendar_app_paths import (
@@ -132,6 +156,457 @@ people_service = build('people', 'v1', credentials=credentials)
 # Calendar ID for list/insert/delete (primary user calendar)
 CALENDAR_ID = 'giventauser@gmail.com'
 
+# Reminder events created by this app use this pattern in the summary
+REMINDER_SUMMARY_MARKER = " - Reminder: "
+
+
+class UserCancelled(Exception):
+    """User closed/cancelled a confirmation dialog; do not create the calendar/contact entry."""
+    pass
+
+
+def _center_window(win, width=None, height=None):
+    win.update_idletasks()
+    w = width or max(win.winfo_reqwidth(), win.winfo_width())
+    h = height or max(win.winfo_reqheight(), win.winfo_height())
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    x = max(0, (sw - w) // 2)
+    y = max(0, (sh - h) // 3)  # slightly above vertical center — easier to notice
+    win.geometry(f"{w}x{h}+{x}+{y}")
+
+
+class LoadingDialog:
+    """
+    Visible modal 'Please wait' window (own Tk root — not a withdrawn parent Toplevel).
+    Use as context manager around long network work on the main thread.
+    """
+
+    def __init__(self, message="Please wait…", parent=None):
+        # Ignore parent: a dedicated root avoids flash/vanish with withdrawn Tk parents.
+        self.root = tk.Tk()
+        self.root.title("Please wait")
+        self.root.resizable(False, False)
+        self.root.configure(bg="#1a5276")
+        self.root.attributes("-topmost", True)
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)  # block accidental close
+        self.win = self.root
+
+        header = tk.Frame(self.root, bg="#1a5276", padx=24, pady=14)
+        header.pack(fill="x")
+        tk.Label(
+            header,
+            text="Working…",
+            bg="#1a5276",
+            fg="white",
+            font=("Helvetica", 16, "bold"),
+        ).pack(anchor="w")
+
+        body = tk.Frame(self.root, bg="#ecf0f1", padx=28, pady=22)
+        body.pack(fill="both", expand=True)
+        self._base_message = message
+        self._label = tk.Label(
+            body,
+            text=message,
+            bg="#ecf0f1",
+            fg="#2c3e50",
+            font=("Helvetica", 12),
+            wraplength=420,
+            justify="center",
+        )
+        self._label.pack(pady=(4, 8))
+        self._dots = tk.Label(
+            body,
+            text="● ○ ○",
+            bg="#ecf0f1",
+            fg="#2980b9",
+            font=("Helvetica", 14),
+        )
+        self._dots.pack(pady=(4, 8))
+        tk.Label(
+            body,
+            text="Keep this window open. It will close when the step finishes.",
+            bg="#ecf0f1",
+            fg="#7f8c8d",
+            font=("Helvetica", 9),
+            wraplength=420,
+        ).pack()
+
+        _center_window(self.root, 480, 200)
+        self.root.lift()
+        self.root.focus_force()
+        self._anim_phase = 0
+        self._alive = True
+        self._tick()
+        # Force a few paint cycles so the window is on-screen before blocking work.
+        for _ in range(5):
+            self.root.update_idletasks()
+            self.root.update()
+
+    def _tick(self):
+        if not self._alive:
+            return
+        try:
+            frames = ("● ○ ○", "○ ● ○", "○ ○ ●", "○ ● ○")
+            self._dots.config(text=frames[self._anim_phase % len(frames)])
+            self._anim_phase += 1
+            self.root.attributes("-topmost", True)
+            self.root.after(350, self._tick)
+        except Exception:
+            pass
+
+    def set_message(self, message):
+        self._base_message = message
+        try:
+            self._label.config(text=message)
+            self.root.update_idletasks()
+            self.root.update()
+        except Exception:
+            pass
+
+    def close(self):
+        self._alive = False
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+
+def run_with_loading(message, work_fn, parent=None):
+    """
+    Show a prominent loading window, run work_fn on a background thread, keep UI alive.
+    work_fn must not touch Tk widgets.
+    """
+    root = tk.Tk()
+    root.title("Please wait")
+    root.resizable(False, False)
+    root.configure(bg="#1a5276")
+    root.attributes("-topmost", True)
+    root.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    header = tk.Frame(root, bg="#1a5276", padx=24, pady=14)
+    header.pack(fill="x")
+    tk.Label(
+        header,
+        text="Working…",
+        bg="#1a5276",
+        fg="white",
+        font=("Helvetica", 16, "bold"),
+    ).pack(anchor="w")
+
+    body = tk.Frame(root, bg="#ecf0f1", padx=28, pady=22)
+    body.pack(fill="both", expand=True)
+    tk.Label(
+        body,
+        text=message,
+        bg="#ecf0f1",
+        fg="#2c3e50",
+        font=("Helvetica", 12),
+        wraplength=420,
+        justify="center",
+    ).pack(pady=(4, 8))
+    dots = tk.Label(body, text="● ○ ○", bg="#ecf0f1", fg="#2980b9", font=("Helvetica", 14))
+    dots.pack(pady=(4, 8))
+    tk.Label(
+        body,
+        text="Keep this window open. It will close when the step finishes.",
+        bg="#ecf0f1",
+        fg="#7f8c8d",
+        font=("Helvetica", 9),
+        wraplength=420,
+    ).pack()
+
+    _center_window(root, 480, 200)
+    root.lift()
+    root.focus_force()
+
+    box = {"value": None, "error": None, "done": False, "started": False}
+    anim = {"phase": 0}
+
+    def worker():
+        try:
+            box["value"] = work_fn()
+        except Exception as e:
+            box["error"] = e
+        finally:
+            box["done"] = True
+
+    def start_work():
+        if box["started"]:
+            return
+        box["started"] = True
+        threading.Thread(target=worker, daemon=True).start()
+
+    def poll():
+        try:
+            frames = ("● ○ ○", "○ ● ○", "○ ○ ●", "○ ● ○")
+            dots.config(text=frames[anim["phase"] % len(frames)])
+            anim["phase"] += 1
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        if box["done"]:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+            return
+        root.after(350, poll)
+
+    # Paint first, then start network work so the dialog is visible immediately.
+    root.update_idletasks()
+    root.update()
+    root.after(200, start_work)
+    poll()
+    root.mainloop()
+
+    if box["error"] is not None:
+        raise box["error"]
+    if not box["done"]:
+        raise RuntimeError("Loading dialog closed before work finished")
+    return box["value"]
+
+
+def _event_row_from_api(event):
+    """Normalize a Calendar API event into the delete-dialog row shape."""
+    start = event.get("start", {})
+    start_str = start.get("dateTime", start.get("date", ""))
+    if start_str and "T" in start_str:
+        try:
+            dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            start_str = dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            pass
+    return {
+        "id": event["id"],
+        "summary": event.get("summary", "(No title)"),
+        "start_str": start_str or "(No date)",
+        "recurringEventId": event.get("recurringEventId"),
+        "htmlLink": event.get("htmlLink", ""),
+    }
+
+
+def _looks_like_calendar_link(text):
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    return (
+        "calendar.app.google/" in t
+        or "calendar.google.com" in t
+        or "google.com/calendar" in t
+        or "eid=" in t
+    )
+
+
+def _decode_calendar_eid(eid):
+    """Decode Google Calendar htmlLink eid -> (event_id, calendar_id_hint)."""
+    eid = unquote((eid or "").strip())
+    pad = "=" * (-len(eid) % 4)
+    raw = base64.urlsafe_b64decode(eid + pad)
+    decoded = raw.decode("utf-8", errors="replace").strip()
+    parts = decoded.split()
+    if not parts:
+        raise ValueError("Empty eid payload")
+    event_id = parts[0]
+    cal_hint = parts[1] if len(parts) > 1 else CALENDAR_ID
+    return event_id, cal_hint
+
+
+def _extract_eid_from_text(text):
+    """Extract base64 `eid=` query param (htmlLink style), not the API event id."""
+    if not text:
+        return None
+    m = re.search(r"[?&#]eid=([^&#\s\"'<>]+)", text, flags=re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\beid[=:\s]+([A-Za-z0-9_\-+/=]+)", text, flags=re.I)
+    return m.group(1) if m else None
+
+
+def _extract_api_event_id_from_share_html(body):
+    """
+    calendar.app.google / share?slt= pages embed the API event id in jslog, e.g.:
+    jslog="187484; 2:[&quot;fbbv6sg0j83hetgdaqe4ilg7bc&quot;]; track:impression"
+    """
+    if not body:
+        return None
+    patterns = [
+        r'jslog="[^"]*?2:\[(?:&quot;|\\?"|")([a-z0-9]{10,64})(?:&quot;|\\?"|")\]',
+        r'2:\[&quot;([a-z0-9]{10,64})&quot;\]',
+        r'2:\["([a-z0-9]{10,64})"\]',
+    ]
+    for pat in patterns:
+        m = re.search(pat, body, flags=re.I)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _extract_title_from_share_html(body):
+    if not body:
+        return None
+    for pat in (
+        r'data-base-title="([^"]+)"',
+        r'<meta\s+property="og:title"\s+content="([^"]+)"',
+        r"<title>([^<]+)</title>",
+    ):
+        m = re.search(pat, body, flags=re.I)
+        if m:
+            title = m.group(1)
+            # HTML entities may appear; keep simple replacements
+            title = (
+                title.replace("&#39;", "'")
+                .replace("&amp;", "&")
+                .replace("&quot;", '"')
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+            )
+            title = re.sub(
+                r"\s*[—\-]\s*Invitation via Google Calendar\s*$",
+                "",
+                title,
+                flags=re.I,
+            ).strip()
+            if title:
+                return title
+    return None
+
+
+def _get_event_row_by_id(event_id, calendar_ids=None):
+    """Fetch one event by API id from preferred calendars. Returns row or None."""
+    if not event_id:
+        return None
+    ids = []
+    for cid in (calendar_ids or ()) + (CALENDAR_ID, "primary"):
+        if cid and cid not in ids:
+            ids.append(cid)
+    for cid in ids:
+        try:
+            event = calendar_service.events().get(
+                calendarId=cid, eventId=event_id,
+            ).execute(num_retries=3)
+            return _event_row_from_api(event)
+        except HttpError:
+            continue
+    return None
+
+
+def _search_events_by_title(query, max_results=25):
+    """Calendar API free-text search (title/description), capped."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    now_utc = datetime.now(timezone.utc)
+    time_min = (now_utc - timedelta(days=14)).isoformat().replace("+00:00", "Z")
+    time_max = (now_utc + timedelta(days=400)).isoformat().replace("+00:00", "Z")
+    events_result = calendar_service.events().list(
+        calendarId=CALENDAR_ID,
+        q=q,
+        maxResults=max_results,
+        singleEvents=True,
+        orderBy="startTime",
+        timeMin=time_min,
+        timeMax=time_max,
+    ).execute(num_retries=3)
+    return [_event_row_from_api(ev) for ev in events_result.get("items", [])]
+
+
+def resolve_calendar_link_to_event(link_text):
+    """
+    Resolve a Google Calendar share/short/html link to one event row.
+    Supports calendar.app.google short links (share?slt=) and event?eid= links.
+    """
+    url = (link_text or "").strip()
+    if not url:
+        raise ValueError("No link provided")
+    if not re.match(r"^https?://", url, flags=re.I):
+        url = "https://" + url
+
+    # 1) Direct htmlLink-style ?eid= (base64 of "eventId calendarId")
+    b64_eid = _extract_eid_from_text(url)
+    if b64_eid:
+        try:
+            event_id, cal_hint = _decode_calendar_eid(b64_eid)
+            row = _get_event_row_by_id(event_id, calendar_ids=(cal_hint,))
+            if row:
+                return row
+        except Exception as e:
+            logging.debug(f"eid decode from URL failed: {e}")
+
+    # 2) Fetch short/share page (calendar.app.google → share?slt=…)
+    resp = requests.get(
+        url,
+        allow_redirects=True,
+        timeout=25,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; tasks_automation/1.0)"},
+    )
+    body = resp.text or ""
+    final_url = resp.url or url
+
+    if re.search(r"no event matches|didn.?t work|might have been cancelled", body, re.I):
+        raise ValueError(
+            "That calendar link no longer matches an event "
+            "(it may have been cancelled). Search by title instead."
+        )
+
+    b64_eid = b64_eid or _extract_eid_from_text(final_url) or _extract_eid_from_text(body)
+    if b64_eid:
+        try:
+            event_id, cal_hint = _decode_calendar_eid(b64_eid)
+            row = _get_event_row_by_id(event_id, calendar_ids=(cal_hint,))
+            if row:
+                return row
+        except Exception as e:
+            logging.debug(f"eid decode from share page failed: {e}")
+
+    # 3) API event id embedded in share-page jslog (most calendar.app.google links)
+    api_event_id = _extract_api_event_id_from_share_html(body)
+    if api_event_id:
+        row = _get_event_row_by_id(api_event_id)
+        if row:
+            return row
+        logging.warning(f"Share page event id {api_event_id} not found on calendar {CALENDAR_ID}")
+
+    # 4) Fallback: page title → Calendar API q= search
+    title = _extract_title_from_share_html(body)
+    if title:
+        rows = _search_events_by_title(title, max_results=25)
+        exact = [r for r in rows if (r.get("summary") or "").strip() == title]
+        if exact:
+            return exact[0]
+        # Prefer non-reminder main events
+        mains = [r for r in rows if REMINDER_SUMMARY_MARKER not in (r.get("summary") or "")]
+        if mains:
+            return mains[0]
+        if rows:
+            return rows[0]
+
+    raise ValueError(
+        "Could not resolve that calendar link to an event on your calendar.\n"
+        "Try searching by part of the event title instead."
+    )
+
+
+def search_events_for_deletion(query, max_results=25):
+    """
+    Search upcoming/near events by title text, or resolve a calendar link.
+    Does not dump the whole calendar — only matching rows (capped).
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+
+    if _looks_like_calendar_link(q):
+        return [resolve_calendar_link_to_event(q)]
+
+    return _search_events_by_title(q, max_results=max_results)
+
 
 @retry(
     stop=stop_after_attempt(5),
@@ -173,12 +648,23 @@ def list_calendar_events():
         raise
     except Exception as e:
         logging.error(f"Unexpected error in list_calendar_events: {e}")
-        messagebox.showerror("Error", f"An unexpected error occurred:\n{str(e)}")
+        err = str(e)
+        if "CERTIFICATE_VERIFY_FAILED" in err or "certificate verify failed" in err.lower():
+            messagebox.showerror(
+                "SSL Certificate Error",
+                "Google Calendar HTTPS verification failed.\n\n"
+                f"{err}\n\n"
+                "This app normally uses certifi's CA bundle. If SSL_CERT_FILE or "
+                "REQUESTS_CA_BUNDLE point at a custom bundle (e.g. Hermes), restart "
+                "the dashboard so the built-in fix can override it.",
+            )
+        else:
+            messagebox.showerror("Error", f"An unexpected error occurred:\n{err}")
         raise
 
 
 def get_upcoming_events_for_deletion(max_results=30):
-    """Fetch upcoming events for the delete dialog. Returns list of dicts with id, summary, start_str, recurringEventId."""
+    """Deprecated dump of upcoming events — prefer search_events_for_deletion()."""
     try:
         events_result = calendar_service.events().list(
             calendarId=CALENDAR_ID,
@@ -187,31 +673,10 @@ def get_upcoming_events_for_deletion(max_results=30):
             orderBy='startTime',
             timeMin=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         ).execute(num_retries=3)
-        events = events_result.get('items', [])
-        out = []
-        for event in events:
-            start = event.get('start', {})
-            start_str = start.get('dateTime', start.get('date', ''))
-            if start_str and 'T' in start_str:
-                try:
-                    dt = datetime.fromisoformat(start_str.replace('Z', '+00:00'))
-                    start_str = dt.strftime('%Y-%m-%d %H:%M')
-                except Exception:
-                    pass
-            out.append({
-                'id': event['id'],
-                'summary': event.get('summary', '(No title)'),
-                'start_str': start_str or '(No date)',
-                'recurringEventId': event.get('recurringEventId'),
-            })
-        return out
+        return [_event_row_from_api(event) for event in events_result.get('items', [])]
     except Exception as e:
         logging.error(f"Error fetching events for deletion: {e}")
         raise
-
-
-# Reminder events created by this app use this pattern in the summary
-REMINDER_SUMMARY_MARKER = " - Reminder: "
 
 
 def _event_name_for_reminder_match(selected_event_summary):
@@ -241,16 +706,18 @@ def _list_reminder_event_ids_for_main_event(selected_event_summary):
         now_utc = datetime.now(timezone.utc)
         time_min = (now_utc - timedelta(days=30)).isoformat().replace('+00:00', 'Z')
         time_max = (now_utc + timedelta(days=400)).isoformat().replace('+00:00', 'Z')
+        # Prefer q= search so we don't page the whole calendar
         page_token = None
         while True:
             result = calendar_service.events().list(
                 calendarId=CALENDAR_ID,
+                q=event_name,
                 timeMin=time_min,
                 timeMax=time_max,
                 singleEvents=True,
                 orderBy='startTime',
                 pageToken=page_token,
-                maxResults=250,
+                maxResults=100,
             ).execute(num_retries=3)
             for event in result.get('items', []):
                 summary = event.get('summary', '')
@@ -312,7 +779,7 @@ def ensure_credentials_file():
 
 
 def show_delete_calendar_dialog():
-    """Dialog to pick an upcoming event and delete it (and its reminders). Recurring: delete one or full series."""
+    """Search by title or calendar link, then delete the event and its app-created reminders."""
     root = tk.Tk()
     root.withdraw()
     dialog = tk.Toplevel(root)
@@ -321,42 +788,98 @@ def show_delete_calendar_dialog():
 
     screen_width = dialog.winfo_screenwidth()
     screen_height = dialog.winfo_screenheight()
-    dialog_width = min(500, int(screen_width * 2/5))
-    dialog_height = min(450, int(screen_height * 1/2))
+    dialog_width = min(560, int(screen_width * 2 / 5))
+    dialog_height = min(520, int(screen_height * 0.55))
 
-    tk.Label(dialog, text="Select an event to delete (reminders are removed with the event):",
-             bg='#ecf0f1', font=('Helvetica', 10)).pack(pady=(10, 2))
-    tk.Label(dialog, text="Click an event in the list, then click \"Delete this event\" or \"Delete entire series\".",
-             bg='#ecf0f1', font=('Helvetica', 9), fg='#7f8c8d').pack(pady=(0, 5))
+    tk.Label(
+        dialog,
+        text="Find an event by title or Google Calendar link",
+        bg='#ecf0f1',
+        font=('Helvetica', 11, 'bold'),
+    ).pack(pady=(12, 2))
+    tk.Label(
+        dialog,
+        text=(
+            "Search avoids loading your whole calendar.\n"
+            "Paste a title fragment, or a link like calendar.app.google/… "
+            "or calendar.google.com/…?eid=…\n"
+            "Deleting also removes related reminders created by this app."
+        ),
+        bg='#ecf0f1',
+        font=('Helvetica', 9),
+        fg='#7f8c8d',
+        justify='left',
+        wraplength=dialog_width - 40,
+    ).pack(pady=(0, 8), padx=12)
+
+    search_frame = tk.Frame(dialog, bg='#ecf0f1')
+    search_frame.pack(fill='x', padx=12, pady=(0, 6))
+    search_var = tk.StringVar()
+    search_entry = tk.Entry(search_frame, textvariable=search_var, font=('Helvetica', 10))
+    search_entry.pack(side='left', fill='x', expand=True, padx=(0, 6))
+
+    status_var = tk.StringVar(value="Enter a title or paste a link, then Search.")
+    tk.Label(dialog, textvariable=status_var, bg='#ecf0f1', fg='#34495e',
+             font=('Helvetica', 9), wraplength=dialog_width - 40, justify='left').pack(
+        anchor='w', padx=12, pady=(0, 4)
+    )
 
     list_frame = tk.Frame(dialog, bg='#ecf0f1')
     list_frame.pack(fill='both', expand=True, padx=10, pady=5)
     scrollbar = tk.Scrollbar(list_frame)
     scrollbar.pack(side='right', fill='y')
     listbox = tk.Listbox(list_frame, height=12, font=('Consolas', 10),
-                        yscrollcommand=scrollbar.set, selectmode='single')
+                         yscrollcommand=scrollbar.set, selectmode='single')
     listbox.pack(side='left', fill='both', expand=True)
     scrollbar.config(command=listbox.yview)
 
     events_list = []
-    try:
-        events_list = get_upcoming_events_for_deletion(max_results=50)
-    except Exception as e:
-        messagebox.showerror("Error", f"Could not load events:\n{str(e)}", parent=dialog)
-        dialog.destroy()
-        root.destroy()
-        return
+    last_selected_index = [None]
 
-    if not events_list:
-        tk.Label(dialog, text="No upcoming events found.", bg='#ecf0f1', fg='#7f8c8d').pack(pady=10)
-    else:
+    def refresh_list(rows):
+        events_list.clear()
+        events_list.extend(rows)
+        listbox.delete(0, tk.END)
+        last_selected_index[0] = None
         for ev in events_list:
             listbox.insert(tk.END, f"  {ev['start_str']}  |  {ev['summary']}")
 
-    # Keep last selected index (selection can be lost when a button takes focus)
-    last_selected_index = [None]
+    def do_search(_event=None):
+        query = search_var.get().strip()
+        if not query:
+            messagebox.showwarning(
+                "Search",
+                "Enter part of the event title, or paste a Google Calendar link.",
+                parent=dialog,
+            )
+            return
+        try:
+            rows = run_with_loading(
+                "Searching Google Calendar…",
+                lambda: search_events_for_deletion(query, max_results=25),
+                parent=dialog,
+            )
+        except Exception as e:
+            logging.error(f"Delete search failed: {e}")
+            messagebox.showerror("Search failed", str(e), parent=dialog)
+            return
+        refresh_list(rows)
+        if not rows:
+            status_var.set("No matching events. Try another title, or a different link.")
+        elif len(rows) == 1 and _looks_like_calendar_link(query):
+            status_var.set("Resolved 1 event from the link. Select it, then Delete.")
+            listbox.selection_set(0)
+            last_selected_index[0] = 0
+        else:
+            status_var.set(f"Showing {len(rows)} match(es) (capped). Select one, then Delete.")
 
-    def on_list_select(event):
+    tk.Button(
+        search_frame, text="Search", bg='#3498db', fg='white', width=10, command=do_search,
+    ).pack(side='left')
+    search_entry.bind('<Return>', do_search)
+    search_entry.focus_set()
+
+    def on_list_select(_event):
         sel = listbox.curselection()
         if sel:
             last_selected_index[0] = int(sel[0])
@@ -373,26 +896,41 @@ def show_delete_calendar_dialog():
     def do_delete(this_occurrence_only=True):
         ev = get_selected_event()
         if not ev:
-            messagebox.showwarning("Select event", "Please select an event from the list.", parent=dialog)
+            messagebox.showwarning(
+                "Select event",
+                "Search first, then select an event from the list.",
+                parent=dialog,
+            )
             return
         event_id = ev['id'] if this_occurrence_only else ev.get('recurringEventId') or ev['id']
         if not this_occurrence_only and not ev.get('recurringEventId'):
             messagebox.showinfo("Not recurring", "This event is not part of a series.", parent=dialog)
             return
-        msg = "Delete this occurrence only?" if (this_occurrence_only and ev.get('recurringEventId')) else (
-            "Delete the entire series (all occurrences)?" if ev.get('recurringEventId') else "Delete this event?"
+        msg = "Delete this occurrence only (and its reminders)?" if (
+            this_occurrence_only and ev.get('recurringEventId')
+        ) else (
+            "Delete the entire series (all occurrences) and reminders?"
+            if ev.get('recurringEventId')
+            else "Delete this event and its related reminders?"
         )
-        # Use custom confirm dialog so it appears on top and is clearly visible
         dialog.grab_release()
-        confirm_result = [None]  # use list so inner function can set it
+        confirm_result = [None]
 
         confirm_win = tk.Toplevel(root)
         confirm_win.title("Confirm delete")
         confirm_win.configure(bg='#ecf0f1')
         f = tk.Frame(confirm_win, bg='#ecf0f1', padx=24, pady=20)
         f.pack(fill='both', expand=True)
-        tk.Label(f, text=msg, wraplength=340, padx=8, pady=12, bg='#ecf0f1',
-                 font=('Helvetica', 11)).pack()
+        tk.Label(
+            f,
+            text=f"{msg}\n\n{ev.get('start_str', '')}  |  {ev.get('summary', '')}",
+            wraplength=380,
+            padx=8,
+            pady=12,
+            bg='#ecf0f1',
+            font=('Helvetica', 10),
+            justify='left',
+        ).pack()
         btn_frame = tk.Frame(f, bg='#ecf0f1')
         btn_frame.pack(pady=(12, 0))
 
@@ -407,10 +945,9 @@ def show_delete_calendar_dialog():
         tk.Button(btn_frame, text="Yes, delete", command=on_yes, width=12,
                   bg='#e74c3c', fg='white').pack(side='left', padx=8)
         tk.Button(btn_frame, text="Cancel", command=on_no, width=12).pack(side='left', padx=8)
-        confirm_win.geometry("400x160")
-        # Center on screen and force on top so it is never hidden
+        confirm_win.geometry("440x200")
         confirm_win.update_idletasks()
-        w, h = 400, 160
+        w, h = 440, 200
         x = (screen_width - w) // 2
         y = (screen_height - h) // 2
         confirm_win.geometry(f'{w}x{h}+{x}+{y}')
@@ -425,8 +962,11 @@ def show_delete_calendar_dialog():
         if not confirm_result[0]:
             return
         try:
-            delete_calendar_event(event_id, event_summary=ev.get('summary'))
-            # Release grab and close delete dialog before showing success (avoid "grab failed")
+            run_with_loading(
+                "Deleting event and related reminders…",
+                lambda: delete_calendar_event(event_id, event_summary=ev.get('summary')),
+                parent=dialog,
+            )
             dialog.grab_release()
             dialog.destroy()
             try:
@@ -522,8 +1062,8 @@ def show_initial_dialog():
         result['choice'] = 'whatsapp_poll'
         dialog.destroy()
 
-    def on_whatsapp_low_turnout():
-        result['choice'] = 'whatsapp_low_turnout'
+    def on_whatsapp_friday_turnout():
+        result['choice'] = 'whatsapp_friday_turnout'
         dialog.destroy()
 
     def on_youtube_transcribe():
@@ -579,11 +1119,11 @@ def show_initial_dialog():
 
     whatsapp_turnout_btn = tk.Button(
         content_frame,
-        text="Volleyball Low Turnout (Friday)",
+        text="Friday Turnout (go/cancel)",
         bg='#0B6E4F',
         fg='white',
         activebackground='#084C35',
-        command=on_whatsapp_low_turnout,
+        command=on_whatsapp_friday_turnout,
         **button_style,
     )
     whatsapp_turnout_btn.pack(pady=8)
@@ -727,14 +1267,16 @@ def get_whatsapp_poll_options():
 
 
 def get_whatsapp_turnout_options():
-    """Dashboard prompts for low-turnout flow. Returns (mode, contact, send_real) or None.
+    """Dashboard prompts for Friday turnout message. Returns (mode, contact, send_real) or None.
 
-    mode: 'check' (read poll, cancel if Yes < 6) or 'send' (always send cancel message)
+    mode:
+      'check' — same as scheduled Friday job: weather + poll → go / weather-cancel / low-turnout
+      'send'  — force low-turnout cancel message (skip weather/poll decision)
     """
     root = tk.Tk()
     root.withdraw()
     dialog = tk.Toplevel(root)
-    dialog.title("Volleyball Low Turnout")
+    dialog.title("Friday Turnout Message")
     dialog.configure(bg='#ecf0f1')
     dialog.resizable(False, False)
 
@@ -743,10 +1285,17 @@ def get_whatsapp_turnout_options():
 
     tk.Label(
         frame,
-        text="Volleyball low turnout",
+        text="Friday turnout message (go / cancel)",
         bg='#ecf0f1',
         font=('Helvetica', 12, 'bold'),
-    ).pack(anchor='w', pady=(0, 8))
+    ).pack(anchor='w', pady=(0, 4))
+    tk.Label(
+        frame,
+        text="Manual trigger if the 3 PM scheduled job fails.",
+        bg='#ecf0f1',
+        font=('Helvetica', 9),
+        fg='#555555',
+    ).pack(anchor='w', pady=(0, 10))
 
     tk.Label(
         frame,
@@ -759,22 +1308,25 @@ def get_whatsapp_turnout_options():
     modes.pack(anchor='w', pady=(4, 12))
     tk.Radiobutton(
         modes,
-        text='Check latest poll — send cancel if fewer than 6 Yes votes',
+        text=(
+            'Full Friday check (recommended) — weather + poll votes, then send '
+            "go / weather-cancel / low-turnout cancel"
+        ),
         variable=action_mode,
         value='check',
         bg='#ecf0f1',
         font=('Helvetica', 10),
-        wraplength=420,
+        wraplength=440,
         justify='left',
     ).pack(anchor='w')
     tk.Radiobutton(
         modes,
-        text='Send cancel message now (skip poll read)',
+        text='Force low-turnout cancel only (skip weather + poll read)',
         variable=action_mode,
         value='send',
         bg='#ecf0f1',
         font=('Helvetica', 10),
-        wraplength=420,
+        wraplength=440,
         justify='left',
     ).pack(anchor='w')
 
@@ -1031,15 +1583,18 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 }"""
 
         try:
-            message = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt + "\n\n" + contact_text
-                    }
-                ]
+            message = run_with_loading(
+                "Extracting contact details…",
+                lambda: client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1000,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt + "\n\n" + contact_text
+                        }
+                    ]
+                ),
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 529:
@@ -1117,17 +1672,36 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             contact_details['email'] = fields['email'].get()
             contact_details['phonenumbers'] = [p.strip() for p in fields['phonenumbers'].get('1.0', tk.END).split('\n') if p.strip()]
             contact_details['notes'] = fields['notes'].get('1.0', tk.END).strip()
+            confirmed["ok"] = True
             edit_dialog.destroy()
 
-        tk.Button(edit_dialog, text="Submit", command=on_submit).grid(row=row, column=0, columnspan=2, pady=20)
+        def on_cancel():
+            confirmed["ok"] = False
+            edit_dialog.destroy()
+
+        confirmed = {"ok": False}
+        btn_row = tk.Frame(edit_dialog)
+        btn_row.grid(row=row, column=0, columnspan=2, pady=20)
+        tk.Button(
+            btn_row, text="Create contact", command=on_submit,
+            bg="#27ae60", fg="white", width=16,
+        ).pack(side="left", padx=6)
+        tk.Button(btn_row, text="Cancel", command=on_cancel, width=12).pack(side="left", padx=6)
+        edit_dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
         edit_dialog.geometry("600x700")
         edit_dialog.grab_set()
         edit_dialog.wait_window()
         root.destroy()
 
+        if not confirmed["ok"]:
+            logging.info("Edit Contact Details cancelled by user")
+            raise UserCancelled("Edit Contact Details cancelled")
+
         return contact_details
 
+    except UserCancelled:
+        raise
     except Exception as e:
         logging.error(f"Error extracting contact details: {str(e)}")
         raise
@@ -1425,34 +1999,34 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
   "otherDetails": "meeting links and any extra information"
 }}"""
 
-        if input_type == "image":
-            base64_image = encode_image(image_path)
-            media_type = _image_media_type(image_path)
-            message = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt.format("image")
-                            },
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": media_type,
-                                    "data": base64_image
+        def _call_anthropic():
+            if input_type == "image":
+                base64_image = encode_image(image_path)
+                media_type = _image_media_type(image_path)
+                return client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1000,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt.format("image")
+                                },
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": base64_image
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                ]
-            )
-        else:  # input_type == "text"
-            message = client.messages.create(
+                            ]
+                        }
+                    ]
+                )
+            return client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=1000,
                 messages=[
@@ -1468,6 +2042,13 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 ]
             )
 
+        loading_msg = (
+            "Reading image and extracting event details…"
+            if input_type == "image"
+            else "Extracting event details from text…"
+        )
+        message = run_with_loading(loading_msg, _call_anthropic)
+
         result = _get_message_text(message)
         try:
             event_details = _parse_json_from_response(result)
@@ -1476,12 +2057,14 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             root.withdraw()  # Hide the main window
             edit_dialog = tk.Toplevel(root)
             edit_dialog.title("Edit Event Details")
-            edit_dialog.lift()  # Bring dialog to front
-            edit_dialog.focus_force()  # Force focus on dialog
+            edit_dialog.attributes("-topmost", True)
+            edit_dialog.lift()
+            edit_dialog.focus_force()
 
             # Create form fields
             fields = {}
             row = 0
+            confirmed = {"ok": False}
 
             # Event Name
             tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
@@ -1545,9 +2128,9 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 event_details['venue'] = fields['venue'].get()
 
                 # Parse contacts from text
-                contacts_text = fields['contacts'].get('1.0', tk.END).strip()
+                contacts_raw = fields['contacts'].get('1.0', tk.END).strip()
                 contacts = []
-                for line in contacts_text.split('\n'):
+                for line in contacts_raw.split('\n'):
                     if '-' in line:
                         name, phone = line.split('-', 1)
                         contacts.append({'name': name.strip(), 'phone': phone.strip()})
@@ -1555,12 +2138,24 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 
                 # Get other details
                 event_details['otherDetails'] = fields['otherDetails'].get('1.0', tk.END).strip()
-
+                confirmed["ok"] = True
                 edit_dialog.destroy()
 
-            # Submit button
-            submit_btn = tk.Button(edit_dialog, text="Submit", command=on_submit)
-            submit_btn.grid(row=row, column=0, columnspan=2, pady=20)
+            def on_cancel():
+                confirmed["ok"] = False
+                edit_dialog.destroy()
+
+            btn_row = tk.Frame(edit_dialog)
+            btn_row.grid(row=row, column=0, columnspan=2, pady=20)
+            tk.Button(
+                btn_row, text="Create calendar entry", command=on_submit,
+                bg="#27ae60", fg="white", width=20,
+            ).pack(side="left", padx=6)
+            tk.Button(
+                btn_row, text="Cancel", command=on_cancel, width=12,
+            ).pack(side="left", padx=6)
+
+            edit_dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
             # Center the dialog
             edit_dialog.geometry("600x700")
@@ -1576,6 +2171,12 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             edit_dialog.wait_window()
             root.destroy()  # Clean up the root window
 
+            if not confirmed["ok"]:
+                logging.info("Edit Event Details cancelled by user — not creating calendar entry")
+                raise UserCancelled("Edit Event Details cancelled")
+
+        except UserCancelled:
+            raise
         except (ValueError, json.JSONDecodeError) as e:
             logging.error(f"Failed to parse model response: {e}")
             event_details = {
@@ -1675,6 +2276,8 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
         logging.info(f"Extracted event: {event_name}, Date: {event_datetime}, Venue: {venue}, Contacts: {contact_list}")
 
         return event_name, event_datetime, event_end_datetime, venue, contact_list
+    except UserCancelled:
+        raise
     except json.JSONDecodeError as e:
         logging.error(f"Failed to parse JSON response: {str(e)}")
         root = tk.Tk()
@@ -2077,8 +2680,17 @@ def main():
                 # Get user input for calendar
                 input_type, event_text, image_path = get_event_input()
 
-                # Extract event details
-                event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(input_type, event_text, image_path)
+                # Extract event details (shows loading while Anthropic runs)
+                try:
+                    event_name, event_datetime, event_end_datetime, venue, contact_list = extract_event_details(
+                        input_type, event_text, image_path
+                    )
+                except UserCancelled:
+                    messagebox.showinfo(
+                        "Cancelled",
+                        "Calendar entry was not created (Edit Event Details was closed).",
+                    )
+                    continue
 
                 # Print the extracted details for confirmation
                 print(f"Extracted Event: {event_name}")
@@ -2088,11 +2700,18 @@ def main():
 
                 # List calendar events using service account
                 print("\nListing calendar events:")
-                list_calendar_events()
+                try:
+                    with LoadingDialog("Refreshing calendar list…"):
+                        list_calendar_events()
+                except Exception as e:
+                    logging.warning(f"list_calendar_events skipped after error: {e}")
 
                 # Create calendar event using service account
                 print("\nCreating calendar event:")
-                create_calendar_event(calendar_service, drive_service, event_details, file_path=image_path)
+                with LoadingDialog("Creating calendar event and reminders…"):
+                    create_calendar_event(
+                        calendar_service, drive_service, event_details, file_path=image_path
+                    )
 
                 # Show success message (OK or Back to home returns to initial dialog)
                 show_success_dialog("Success", "Calendar entry added successfully!")
@@ -2118,6 +2737,11 @@ def main():
                     show_success_dialog("Success", "Contact created successfully!")
                     if contact_url:
                         show_contact_url_dialog("Contact URL", f"View contact at:\n{contact_url}")
+                except UserCancelled:
+                    messagebox.showinfo(
+                        "Cancelled",
+                        "Contact was not created (Edit Contact Details was closed).",
+                    )
                 except Exception as e:
                     logging.error(f"Contact entry failed: {e}")
                     messagebox.showerror(
@@ -2220,7 +2844,7 @@ def main():
                     logging.error(f"Failed to start WhatsApp poll: {e}")
                     messagebox.showerror("Error", f"Could not start WhatsApp poll:\n{str(e)}")
 
-            elif choice == 'whatsapp_low_turnout':
+            elif choice == 'whatsapp_friday_turnout':
                 tasks_root = resolved_tasks_automation_root()
                 poll_path = os.path.join(tasks_root, 'WhatsApp_Web_Poll')
                 turnout_opts = get_whatsapp_turnout_options()
@@ -2271,27 +2895,29 @@ def main():
                             messagebox.showerror("Error", f"No Windows .bat and no {poll_main}")
                             continue
                     action_label = (
-                        'check poll (cancel if < 6 Yes)'
+                        'full Friday check (weather + poll → go/cancel)'
                         if mode == 'check'
-                        else 'send cancel message'
+                        else 'force low-turnout cancel'
                     )
                     mode_label = 'real send' if send_real else 'dry-run'
                     logging.info(
-                        "Launched WhatsApp turnout contact=%r action=%s mode=%s",
+                        "Launched WhatsApp Friday turnout contact=%r action=%s mode=%s",
                         contact, action_label, mode_label,
                     )
                     messagebox.showinfo(
-                        "Volleyball Low Turnout",
+                        "Friday Turnout Message",
                         f"Started in a new console.\n\n"
                         f"Contact: {contact}\n"
                         f"Action: {action_label}\n"
                         f"Mode: {mode_label}\n\n"
-                        "Ensure Edge is logged in at web.whatsapp.com (C:\\edge-cdp profile).",
+                        "Ensure Edge is logged in at web.whatsapp.com (C:\\edge-cdp profile).\n"
+                        "Default action matches the Friday 3 PM scheduled job.",
                     )
                 except Exception as e:
-                    logging.error(f"Failed to start WhatsApp turnout: {e}")
+                    logging.error(f"Failed to start WhatsApp Friday turnout: {e}")
                     messagebox.showerror(
-                        "Error", f"Could not start WhatsApp turnout flow:\n{str(e)}",
+                        "Error",
+                        f"Could not start Friday turnout message:\n{str(e)}",
                     )
 
             elif choice in ('youtube_transcribe', 'prune_transcripts'):
