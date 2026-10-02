@@ -58,6 +58,7 @@ for _pkg in (
     'anthropic',
     'tenacity',
     'httpx',
+    'pillow_avif',
 ):
     try:
         _hidden.extend(collect_submodules(_pkg))
@@ -74,13 +75,38 @@ try:
     _datas.extend(collect_data_files('certifi'))
 except Exception:
     pass
-if 'certifi' not in _hidden:
-    _hidden.append('certifi')
+try:
+    _datas.extend(collect_data_files('pillow_avif'))
+except Exception:
+    pass
+try:
+    from PyInstaller.utils.hooks import collect_dynamic_libs
+    _binaries = collect_dynamic_libs('pillow_avif')
+except Exception:
+    _binaries = []
+# Explicit Windows extension module for AVIF decode in onefile builds.
+try:
+    import pillow_avif as _pavif
+    import glob as _glob
+    _pavif_dir = os.path.dirname(_pavif.__file__)
+    for _pyd in _glob.glob(os.path.join(_pavif_dir, '_avif*.pyd')):
+        _binaries.append((_pyd, 'pillow_avif'))
+    _avif_plugin = os.path.join(_pavif_dir, 'AvifImagePlugin.py')
+    if os.path.isfile(_avif_plugin):
+        _datas.append((_avif_plugin, 'pillow_avif'))
+    _avif_init = os.path.join(_pavif_dir, '__init__.py')
+    if os.path.isfile(_avif_init):
+        _datas.append((_avif_init, 'pillow_avif'))
+except Exception:
+    pass
+for _name in ('certifi', 'PIL', 'pillow_avif', 'pillow_avif.AvifImagePlugin'):
+    if _name not in _hidden:
+        _hidden.append(_name)
 
 a = Analysis(
     ['google_calendar_and_contacts_automate.py'],
     pathex=[_SPEC_DIR, _LAUNDRY_DIR],
-    binaries=[],
+    binaries=_binaries,
     datas=_datas,
     hiddenimports=_hidden,
     hookspath=[],

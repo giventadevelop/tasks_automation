@@ -26,7 +26,7 @@ if not defined PY (
 echo [ok] Build Python: %PY%
 
 echo [1/3] Installing build dependencies...
-%PY% -m pip install -q google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties pyinstaller websocket-client
+%PY% -m pip install -q google-api-python-client google-auth-httplib2 google-auth-oauthlib anthropic tenacity httpx jproperties pyinstaller websocket-client certifi pillow pillow-avif-plugin
 if errorlevel 1 (
     echo [FAIL] pip install failed.
     pause

@@ -46,6 +46,12 @@ from calendar_app_paths import (
 )
 from prompt_library import show_prompt_library
 
+# Register AVIF support early so frozen builds always include pillow_avif.
+try:
+    import pillow_avif  # noqa: F401
+except ImportError:
+    pass
+
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -175,6 +181,56 @@ def _center_window(win, width=None, height=None):
     win.geometry(f"{w}x{h}+{x}+{y}")
 
 
+def _configure_dictation_friendly(widget):
+    """
+    Tune Entry/Text widgets so Windows Voice Typing (Win+H) inserts more reliably.
+    Avoid grab_set / always-on-top on the parent dialog when using these fields.
+    """
+    try:
+        widget.configure(exportselection=False)
+    except tk.TclError:
+        pass
+    if isinstance(widget, tk.Text):
+        try:
+            widget.configure(undo=True, autoseparators=True, maxundo=-1, wrap="word")
+        except tk.TclError:
+            pass
+    # Keep keyboard/IME focus on the field when clicked or tabbed.
+    widget.bind("<FocusIn>", lambda _e: widget.focus_set(), add="+")
+    return widget
+
+
+def _prepare_text_entry_dialog(dialog, focus_widget=None, tip_parent=None):
+    """
+    Prepare a dialog for typed/voice input.
+    Do NOT use grab_set or -topmost — both fight Windows Voice Typing.
+    """
+    try:
+        dialog.attributes("-topmost", False)
+    except Exception:
+        pass
+    tip_parent = tip_parent or dialog
+    tip = tk.Label(
+        tip_parent,
+        text="Tip: click in a field, then press Win+H for Windows voice typing.",
+        fg="#7f8c8d",
+        font=("Helvetica", 8),
+        justify="left",
+    )
+    # Caller may pack/grid; if tip_parent is dialog and not yet laid out, pack at bottom later.
+    # Return tip so caller can place it.
+    dialog.update_idletasks()
+    if focus_widget is not None:
+        try:
+            focus_widget.focus_force()
+        except Exception:
+            try:
+                focus_widget.focus_set()
+            except Exception:
+                pass
+    return tip
+
+
 class LoadingDialog:
     """
     Visible modal 'Please wait' window (own Tk root — not a withdrawn parent Toplevel).
@@ -282,13 +338,15 @@ def run_with_loading(message, work_fn, parent=None):
     """
     Show a prominent loading window, run work_fn on a background thread, keep UI alive.
     work_fn must not touch Tk widgets.
+
+    Uses wait_window (not mainloop). Closing the window is only done from the Tk
+    main thread (poll) — calling Tk from the worker thread hangs the frozen Windows exe.
     """
     root = tk.Tk()
     root.title("Please wait")
     root.resizable(False, False)
     root.configure(bg="#1a5276")
     root.attributes("-topmost", True)
-    root.protocol("WM_DELETE_WINDOW", lambda: None)
 
     header = tk.Frame(root, bg="#1a5276", padx=24, pady=14)
     header.pack(fill="x")
@@ -315,57 +373,94 @@ def run_with_loading(message, work_fn, parent=None):
     dots.pack(pady=(4, 8))
     tk.Label(
         body,
-        text="Keep this window open. It will close when the step finishes.",
+        text="This closes automatically when finished. Use Cancel if it seems stuck.",
         bg="#ecf0f1",
         fg="#7f8c8d",
         font=("Helvetica", 9),
         wraplength=420,
     ).pack()
 
-    _center_window(root, 480, 200)
+    box = {
+        "value": None,
+        "error": None,
+        "done": False,
+        "started": False,
+        "cancelled": False,
+        "closed": False,
+    }
+    anim = {"phase": 0}
+
+    def _close_loading():
+        if box["closed"]:
+            return
+        box["closed"] = True
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+    def on_cancel():
+        box["cancelled"] = True
+        box["done"] = True
+        _close_loading()
+
+    tk.Button(
+        body, text="Cancel", command=on_cancel, width=12, bg="#95a5a6", fg="white",
+    ).pack(pady=(14, 0))
+    root.protocol("WM_DELETE_WINDOW", on_cancel)
+
+    _center_window(root, 480, 230)
     root.lift()
     root.focus_force()
 
-    box = {"value": None, "error": None, "done": False, "started": False}
-    anim = {"phase": 0}
-
     def worker():
         try:
+            # If user already cancelled, skip work.
+            if box["cancelled"]:
+                return
             box["value"] = work_fn()
         except Exception as e:
-            box["error"] = e
+            if not box["cancelled"]:
+                box["error"] = e
         finally:
+            # Only set the flag here — NEVER call Tk from this thread.
             box["done"] = True
 
     def start_work():
-        if box["started"]:
+        if box["started"] or box["cancelled"]:
             return
         box["started"] = True
         threading.Thread(target=worker, daemon=True).start()
 
     def poll():
+        if box["done"]:
+            _close_loading()
+            return
         try:
             frames = ("● ○ ○", "○ ● ○", "○ ○ ●", "○ ● ○")
             dots.config(text=frames[anim["phase"] % len(frames)])
             anim["phase"] += 1
             root.attributes("-topmost", True)
+            root.after(200, poll)
         except Exception:
+            # Window already gone
             pass
-        if box["done"]:
-            try:
-                root.destroy()
-            except Exception:
-                pass
-            return
-        root.after(350, poll)
 
     # Paint first, then start network work so the dialog is visible immediately.
     root.update_idletasks()
     root.update()
-    root.after(200, start_work)
+    root.after(150, start_work)
     poll()
-    root.mainloop()
+    root.wait_window()
 
+    # Brief pause so Tcl fully tears down before the next tk.Tk() (Windows / PyInstaller).
+    try:
+        time.sleep(0.1)
+    except Exception:
+        pass
+
+    if box["cancelled"]:
+        raise UserCancelled("Loading cancelled by user")
     if box["error"] is not None:
         raise box["error"]
     if not box["done"]:
@@ -1405,10 +1500,29 @@ def get_contact_input():
     root = tk.Tk()
     root.withdraw()
 
-    dialog = tk.Toplevel()
+    dialog = tk.Toplevel(root)
     dialog.title("Contact Details")
-    text_area = tk.Text(dialog, width=60, height=20)
-    text_area.pack(padx=10, pady=10)
+    dialog.configure(bg="#ecf0f1")
+
+    tk.Label(
+        dialog,
+        text="Type or dictate contact details (name, phone, email, company, notes):",
+        bg="#ecf0f1",
+        font=("Helvetica", 10),
+        wraplength=460,
+        justify="left",
+    ).pack(padx=10, pady=(10, 2), anchor="w")
+    tk.Label(
+        dialog,
+        text="Tip: click in the box below, then press Win+H for Windows voice typing.",
+        bg="#ecf0f1",
+        fg="#7f8c8d",
+        font=("Helvetica", 8),
+    ).pack(padx=10, pady=(0, 6), anchor="w")
+
+    text_area = tk.Text(dialog, width=60, height=20, font=("Helvetica", 11), undo=True, wrap="word")
+    _configure_dictation_friendly(text_area)
+    text_area.pack(padx=10, pady=4, fill="both", expand=True)
 
     contact_text = ""
 
@@ -1417,11 +1531,23 @@ def get_contact_input():
         contact_text = text_area.get("1.0", tk.END).strip()
         dialog.destroy()
 
-    ok_button = tk.Button(dialog, text="OK", command=on_ok)
-    ok_button.pack(pady=10)
+    def on_cancel():
+        dialog.destroy()
 
-    dialog.geometry("500x650")
+    ok_button = tk.Button(dialog, text="OK", command=on_ok, width=12, bg="#3498db", fg="white")
+    ok_button.pack(pady=10)
+    dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+    dialog.geometry("520x680")
+    # No grab_set / topmost — required for responsive Win+H voice typing into Tk fields.
+    dialog.lift()
+    dialog.update_idletasks()
+    text_area.focus_force()
     dialog.wait_window()
+    try:
+        root.destroy()
+    except Exception:
+        pass
 
     if not contact_text:
         print("No contact details entered. Exiting.")
@@ -1609,48 +1735,67 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
                 raise Exception(error_msg)
 
         result = _get_message_text(message)
+        logging.info("Contact AI response received (%s chars); opening edit dialog", len(result or ""))
         contact_details = _parse_json_from_response(result)
+        if not isinstance(contact_details.get("phonenumbers"), list):
+            raw_phones = contact_details.get("phonenumbers") or []
+            if isinstance(raw_phones, str):
+                contact_details["phonenumbers"] = [p.strip() for p in raw_phones.split(",") if p.strip()]
+            else:
+                contact_details["phonenumbers"] = []
 
         # Show edit dialog
         root = tk.Tk()
         root.withdraw()
         edit_dialog = tk.Toplevel(root)
         edit_dialog.title("Edit Contact Details")
+        # Do not use -topmost or grab_set — they break Windows voice typing into fields.
+        edit_dialog.lift()
 
         fields = {}
         row = 0
 
+        tk.Label(
+            edit_dialog,
+            text="Tip: click a field, then Win+H to dictate. Close voice typing when done.",
+            fg="#7f8c8d",
+            font=("Helvetica", 8),
+        ).grid(row=row, column=0, columnspan=2, padx=5, pady=(8, 4), sticky="w")
+        row += 1
+
         # First Name
         tk.Label(edit_dialog, text="First Name:").grid(row=row, column=0, padx=5, pady=5)
-        fields['firstName'] = tk.Entry(edit_dialog, width=40)
+        fields['firstName'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
         fields['firstName'].insert(0, contact_details.get('firstName', ''))
         fields['firstName'].grid(row=row, column=1, padx=5, pady=5)
         row += 1
 
         # Last Name
         tk.Label(edit_dialog, text="Last Name:").grid(row=row, column=0, padx=5, pady=5)
-        fields['lastName'] = tk.Entry(edit_dialog, width=40)
+        fields['lastName'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
         fields['lastName'].insert(0, contact_details.get('lastName', ''))
         fields['lastName'].grid(row=row, column=1, padx=5, pady=5)
         row += 1
 
         # Company
         tk.Label(edit_dialog, text="Company:").grid(row=row, column=0, padx=5, pady=5)
-        fields['companyName'] = tk.Entry(edit_dialog, width=40)
+        fields['companyName'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
         fields['companyName'].insert(0, contact_details.get('companyName', ''))
         fields['companyName'].grid(row=row, column=1, padx=5, pady=5)
         row += 1
 
         # Email
         tk.Label(edit_dialog, text="Email:").grid(row=row, column=0, padx=5, pady=5)
-        fields['email'] = tk.Entry(edit_dialog, width=40)
+        fields['email'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
         fields['email'].insert(0, contact_details.get('email', ''))
         fields['email'].grid(row=row, column=1, padx=5, pady=5)
         row += 1
 
         # Phone Numbers
         tk.Label(edit_dialog, text="Phone Numbers:").grid(row=row, column=0, padx=5, pady=5)
-        phone_text = tk.Text(edit_dialog, width=40, height=4)
+        phone_text = _configure_dictation_friendly(
+            tk.Text(edit_dialog, width=40, height=4, undo=True, wrap="word")
+        )
         phones = contact_details.get('phonenumbers', [])
         phone_text.insert('1.0', '\n'.join(phones))
         phone_text.grid(row=row, column=1, padx=5, pady=5)
@@ -1659,7 +1804,9 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 
         # Notes
         tk.Label(edit_dialog, text="Notes:").grid(row=row, column=0, padx=5, pady=5)
-        notes_text = tk.Text(edit_dialog, width=40, height=4)
+        notes_text = _configure_dictation_friendly(
+            tk.Text(edit_dialog, width=40, height=4, undo=True, wrap="word")
+        )
         notes_text.insert('1.0', contact_details.get('notes', ''))
         notes_text.grid(row=row, column=1, padx=5, pady=5)
         fields['notes'] = notes_text
@@ -1690,7 +1837,9 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
         edit_dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
         edit_dialog.geometry("600x700")
-        edit_dialog.grab_set()
+        edit_dialog.update_idletasks()
+        fields['firstName'].focus_force()
+        # No grab_set — keeps Win+H voice typing responsive in Entry/Text fields.
         edit_dialog.wait_window()
         root.destroy()
 
@@ -1783,11 +1932,20 @@ def create_contact(contact_details):
 
 
 _CALENDAR_IMAGE_FILETYPES = [
-    ("Image files", "*.png *.jpg *.jpeg *.jfif *.jpe *.gif *.bmp *.webp"),
+    ("Image files", "*.png *.jpg *.jpeg *.jfif *.jpe *.gif *.bmp *.webp *.avif *.avifs"),
     ("JPEG / JFIF", "*.jpg *.jpeg *.jfif *.jpe"),
+    ("AVIF", "*.avif *.avifs"),
     ("PNG", "*.png"),
     ("All files", "*.*"),
 ]
+
+# Anthropic Messages vision API accepts only these media_type values.
+_ANTHROPIC_IMAGE_MEDIA_TYPES = frozenset({
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+})
 
 
 def _image_media_type(image_path):
@@ -1802,11 +1960,73 @@ def _image_media_type(image_path):
         ".gif": "image/gif",
         ".webp": "image/webp",
         ".bmp": "image/bmp",
+        ".avif": "image/avif",
+        ".avifs": "image/avif",
     }
     if ext in by_ext:
         return by_ext[ext]
     guessed, _ = mimetypes.guess_type(image_path)
     return guessed or "image/jpeg"
+
+
+def _prepare_image_for_anthropic(image_path):
+    """
+    Return (media_type, base64_data) for Anthropic vision.
+    JFIF/JPEG/PNG/GIF/WebP are sent as-is; AVIF/BMP/others are converted to JPEG.
+    The original file path is still used for Drive calendar attachments.
+    """
+    media_type = _image_media_type(image_path)
+    if media_type in _ANTHROPIC_IMAGE_MEDIA_TYPES:
+        return media_type, encode_image(image_path)
+
+    # Register AVIF opener when available (pillow-avif-plugin).
+    try:
+        import pillow_avif  # noqa: F401
+    except ImportError:
+        pass
+
+    try:
+        from PIL import Image
+        import io
+    except ImportError as e:
+        raise Exception(
+            f"Image format '{media_type}' is not supported by Anthropic directly, "
+            f"and Pillow is not installed to convert it. Install pillow and "
+            f"pillow-avif-plugin, or save the image as JPEG/PNG/WebP.\n({e})"
+        ) from e
+
+    try:
+        with Image.open(image_path) as im:
+            if im.mode in ("RGBA", "LA"):
+                background = Image.new("RGB", im.size, (255, 255, 255))
+                alpha = im.split()[-1]
+                background.paste(im.convert("RGBA"), mask=alpha)
+                rgb = background
+            elif im.mode == "P":
+                rgba = im.convert("RGBA")
+                background = Image.new("RGB", rgba.size, (255, 255, 255))
+                background.paste(rgba, mask=rgba.split()[-1])
+                rgb = background
+            elif im.mode != "RGB":
+                rgb = im.convert("RGB")
+            else:
+                rgb = im.copy()
+            buf = io.BytesIO()
+            rgb.save(buf, format="JPEG", quality=92, optimize=True)
+            data = base64.b64encode(buf.getvalue()).decode("utf-8")
+    except Exception as e:
+        raise Exception(
+            f"Could not convert '{os.path.basename(image_path)}' "
+            f"({media_type}) to JPEG for AI parsing.\n"
+            f"Save/export as JPEG, PNG, GIF, or WebP and try again.\n\n{e}"
+        ) from e
+
+    logging.info(
+        "Converted %s (%s) -> image/jpeg for Anthropic vision",
+        os.path.basename(image_path),
+        media_type,
+    )
+    return "image/jpeg", data
 
 
 def _pick_calendar_image_file(title="Select image file"):
@@ -1837,7 +2057,7 @@ def get_event_input():
         text=(
             "Choose one:\n"
             "• Text — type or paste details (flyer text, message, notes)\n"
-            "• Image — upload a photo or screenshot (e.g. WhatsApp .jfif) "
+            "• Image — upload a photo or screenshot (e.g. WhatsApp .jfif / .avif) "
             "and AI will read it"
         ),
         bg="#ecf0f1",
@@ -1917,13 +2137,23 @@ def get_event_input():
     root.withdraw()
     text_dialog = tk.Toplevel(root)
     text_dialog.title("Event details — type or paste")
+    text_dialog.configure(bg="#ecf0f1")
     tk.Label(
         text_dialog,
         text="Enter or paste event details (name, date, time, venue, contacts):",
         font=("Helvetica", 10),
-    ).pack(padx=10, pady=(10, 4), anchor="w")
-    text_area = tk.Text(text_dialog, width=60, height=20)
-    text_area.pack(padx=10, pady=4)
+        bg="#ecf0f1",
+    ).pack(padx=10, pady=(10, 2), anchor="w")
+    tk.Label(
+        text_dialog,
+        text="Tip: click in the box, then press Win+H for Windows voice typing.",
+        font=("Helvetica", 8),
+        fg="#7f8c8d",
+        bg="#ecf0f1",
+    ).pack(padx=10, pady=(0, 6), anchor="w")
+    text_area = tk.Text(text_dialog, width=60, height=20, font=("Helvetica", 11), undo=True, wrap="word")
+    _configure_dictation_friendly(text_area)
+    text_area.pack(padx=10, pady=4, fill="both", expand=True)
 
     event_text = ""
 
@@ -1932,10 +2162,17 @@ def get_event_input():
         event_text = text_area.get("1.0", tk.END).strip()
         text_dialog.destroy()
 
-    ok_button = tk.Button(text_dialog, text="OK", command=on_ok)
+    def on_cancel_text():
+        text_dialog.destroy()
+
+    ok_button = tk.Button(text_dialog, text="OK", command=on_ok, width=12, bg="#3498db", fg="white")
     ok_button.pack(pady=10)
-    text_dialog.geometry("500x650")
-    text_dialog.grab_set()
+    text_dialog.protocol("WM_DELETE_WINDOW", on_cancel_text)
+    text_dialog.geometry("520x680")
+    # No grab_set — required for responsive Win+H voice typing.
+    text_dialog.lift()
+    text_dialog.update_idletasks()
+    text_area.focus_force()
     text_dialog.wait_window()
     root.destroy()
 
@@ -2001,8 +2238,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 
         def _call_anthropic():
             if input_type == "image":
-                base64_image = encode_image(image_path)
-                media_type = _image_media_type(image_path)
+                media_type, base64_image = _prepare_image_for_anthropic(image_path)
                 return client.messages.create(
                     model="claude-sonnet-4-6",
                     max_tokens=1000,
@@ -2057,53 +2293,62 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             root.withdraw()  # Hide the main window
             edit_dialog = tk.Toplevel(root)
             edit_dialog.title("Edit Event Details")
-            edit_dialog.attributes("-topmost", True)
+            # No -topmost / grab_set — keeps Windows Voice Typing (Win+H) responsive.
             edit_dialog.lift()
-            edit_dialog.focus_force()
 
             # Create form fields
             fields = {}
             row = 0
             confirmed = {"ok": False}
 
+            tk.Label(
+                edit_dialog,
+                text="Tip: click a field, then Win+H to dictate.",
+                fg="#7f8c8d",
+                font=("Helvetica", 8),
+            ).grid(row=row, column=0, columnspan=2, padx=5, pady=(8, 4), sticky="w")
+            row += 1
+
             # Event Name
             tk.Label(edit_dialog, text="Event Name:").grid(row=row, column=0, padx=5, pady=5)
-            fields['eventName'] = tk.Entry(edit_dialog, width=40)
+            fields['eventName'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
             fields['eventName'].insert(0, event_details.get('eventName', ''))
             fields['eventName'].grid(row=row, column=1, padx=5, pady=5)
             row += 1
 
             # Date
             tk.Label(edit_dialog, text="Date (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5)
-            fields['date'] = tk.Entry(edit_dialog, width=40)
+            fields['date'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
             fields['date'].insert(0, event_details.get('date', ''))
             fields['date'].grid(row=row, column=1, padx=5, pady=5)
             row += 1
 
             # Start Time
             tk.Label(edit_dialog, text="Start Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
-            fields['startTime'] = tk.Entry(edit_dialog, width=40)
+            fields['startTime'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
             fields['startTime'].insert(0, event_details.get('startTime', ''))
             fields['startTime'].grid(row=row, column=1, padx=5, pady=5)
             row += 1
 
             # End Time
             tk.Label(edit_dialog, text="End Time (HH:MM AM/PM):").grid(row=row, column=0, padx=5, pady=5)
-            fields['endTime'] = tk.Entry(edit_dialog, width=40)
+            fields['endTime'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
             fields['endTime'].insert(0, event_details.get('endTime', ''))
             fields['endTime'].grid(row=row, column=1, padx=5, pady=5)
             row += 1
 
             # Venue
             tk.Label(edit_dialog, text="Venue:").grid(row=row, column=0, padx=5, pady=5)
-            fields['venue'] = tk.Entry(edit_dialog, width=40)
+            fields['venue'] = _configure_dictation_friendly(tk.Entry(edit_dialog, width=40))
             fields['venue'].insert(0, event_details.get('venue', ''))
             fields['venue'].grid(row=row, column=1, padx=5, pady=5)
             row += 1
 
             # Contacts
             tk.Label(edit_dialog, text="Contacts:").grid(row=row, column=0, padx=5, pady=5)
-            contacts_text = tk.Text(edit_dialog, width=40, height=4)
+            contacts_text = _configure_dictation_friendly(
+                tk.Text(edit_dialog, width=40, height=4, undo=True, wrap="word")
+            )
             contacts = event_details.get('contacts', [])
             contacts_str = '\n'.join([f"{c.get('name', '')}-{c.get('phone', '')}" for c in contacts])
             contacts_text.insert('1.0', contacts_str)
@@ -2113,7 +2358,9 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
 
             # Other Details
             tk.Label(edit_dialog, text="Other Details:").grid(row=row, column=0, padx=5, pady=5)
-            other_details = tk.Text(edit_dialog, width=40, height=4)
+            other_details = _configure_dictation_friendly(
+                tk.Text(edit_dialog, width=40, height=4, undo=True, wrap="word")
+            )
             other_details.insert('1.0', event_details.get('otherDetails', ''))
             other_details.grid(row=row, column=1, padx=5, pady=5)
             fields['otherDetails'] = other_details
@@ -2166,8 +2413,8 @@ Return ONLY a valid JSON object in this exact format, with no additional text:
             y = (edit_dialog.winfo_screenheight() // 2) - (height // 2)
             edit_dialog.geometry(f'{width}x{height}+{x}+{y}')
 
-            # Wait for dialog to close
-            edit_dialog.grab_set()  # Make dialog modal
+            # Wait for dialog to close (no grab_set — voice typing friendly)
+            fields['eventName'].focus_force()
             edit_dialog.wait_window()
             root.destroy()  # Clean up the root window
 

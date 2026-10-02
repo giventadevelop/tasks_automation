@@ -552,7 +552,15 @@ class Tab:
             raise RuntimeError(res.get("description", "JS error"))
         return res.get("value")
 
-    def wait(self, expr: str, label: str, timeout: float = 30, poll: float = 0.5):
+    def wait(
+        self,
+        expr: str,
+        label: str,
+        timeout: float = 30,
+        poll: float = 0.5,
+        *,
+        raise_on_timeout: bool = False,
+    ):
         deadline = time.time() + timeout
         last = None
         while time.time() < deadline:
@@ -565,7 +573,10 @@ class Tab:
             time.sleep(poll)
         if TRACE:
             self._dump_dom_summary(label)
-        fail(f"timeout waiting for: {label} (last={last!r})")
+        msg = f"timeout waiting for: {label} (last={last!r})"
+        if raise_on_timeout:
+            raise TimeoutError(msg)
+        fail(msg)
 
     def click(self, selector_js: str, label: str, timeout: float = 15):
         """Click by dispatching real mouse events at the element's center.
@@ -882,19 +893,108 @@ _SEARCH_DIAG_EXPR = (
     "})()"
 )
 # Pick a search-result row that is an ACTUAL chat entry, not a section header.
-# Real chat rows are role="gridcell" with tabindex="0".
+# WhatsApp Web keeps changing the search-results DOM; try several strategies.
 S_CONTACT_RESULT = (
-    "(()=>{const needle=" + json.dumps(CONTACT.lower()) + ";"
-    "const grid=document.querySelector('div[role=\"grid\"][aria-label*=\"Search results\"]')"
-    "         || document.querySelector('#pane-side div[role=\"grid\"]');"
-    "if(!grid)return null;"
-    # gridcells are real chat rows; section headers don't have tabindex
-    "const rows=[...grid.querySelectorAll('div[role=\"gridcell\"][tabindex=\"0\"], div[role=\"listitem\"]')];"
-    "for(const r of rows){"
-    "  const tx=(r.innerText||'').toLowerCase();"
-    "  if(tx.includes(needle)) return r;"
+    "(()=>{"
+    "const needle=" + json.dumps(CONTACT.lower()) + ";"
+    "const needleCompact=needle.replace(/\\s+/g,'');"
+    # WhatsApp virtualized rows often have offsetParent===null; use geometry instead.
+    "const vis=e=>{"
+    "  if(!e) return false;"
+    "  const r=e.getBoundingClientRect();"
+    "  return r.width>40 && r.height>16 && r.bottom>0 && r.top<(window.innerHeight||2000);"
+    "};"
+    "const norm=s=>(s||'').toLowerCase().replace(/\\s+/g,' ').trim();"
+    "const compact=s=>norm(s).replace(/\\s+/g,'');"
+    # Strip leading/trailing emoji/punctuation so '🏐 volleyball friday 6-8 🏐' matches.
+    "const stripDecor=s=>norm(s).replace(/^[^a-z0-9]+|[^a-z0-9]+$/g,'').trim();"
+    "const scoreText=(tx)=>{"
+    "  const n=norm(tx); const c=compact(tx); const d=stripDecor(tx);"
+    "  if(!n) return 0;"
+    "  if(n===needle || c===needleCompact || d===needle) return 100;"
+    "  if(n.startsWith(needle) || c.startsWith(needleCompact) || d.startsWith(needle)) return 95;"
+    "  if(d.includes(needle) || n.includes(needle) || c.includes(needleCompact)) return 80;"
+    "  return 0;"
+    "};"
+    "const candidates=[];"
+    # Strategy 1: Search-results / chat-list grids
+    "const grids=[...document.querySelectorAll("
+    "  'div[role=\"grid\"][aria-label*=\"Search results\"], "
+    "div[role=\"grid\"][aria-label*=\"search\"], "
+    "div[role=\"grid\"][aria-label*=\"Search\"], "
+    "#pane-side div[role=\"grid\"]')].filter(vis);"
+    "for(const grid of grids){"
+    "  const rows=[...grid.querySelectorAll("
+    "    'div[role=\"gridcell\"][tabindex=\"0\"], div[role=\"listitem\"], "
+    "div[role=\"row\"] [role=\"gridcell\"], div[tabindex=\"0\"]')];"
+    "  for(const r of rows){ if(vis(r)) candidates.push(r); }"
     "}"
-    "return null;})()"
+    # Strategy 2: Any pane-side clickable row whose text matches
+    "const pane=document.querySelector('#pane-side');"
+    "if(pane){"
+    "  const rows=[...pane.querySelectorAll("
+    "    'div[role=\"listitem\"], div[role=\"row\"], div[tabindex=\"0\"], "
+    "div[data-testid=\"cell-frame-container\"], div[data-testid*=\"list-item\"]')];"
+    "  for(const r of rows){ if(vis(r)) candidates.push(r); }"
+    "}"
+    # Strategy 3: Title/span hits — climb to a clickable parent in the left pane
+    "const titleHits=[...document.querySelectorAll("
+    "  'span[title], span[dir=\"auto\"], div[data-testid=\"cell-frame-title\"]')"
+    "].filter(vis);"
+    "for(const t of titleHits){"
+    "  const rawTitle=t.getAttribute('title')||'';"
+    "  const tx=norm(rawTitle||t.innerText||'');"
+    "  if(!(tx.includes(needle)||compact(tx).includes(needleCompact)||stripDecor(rawTitle||tx).includes(needle))) continue;"
+    "  let p=t;"
+    "  for(let i=0;i<10&&p;i++){"
+    "    if(p.getAttribute && ("
+    "      p.getAttribute('role')==='listitem' ||"
+    "      p.getAttribute('role')==='gridcell' ||"
+    "      p.getAttribute('tabindex')==='0' ||"
+    "      (p.dataset&&String(p.dataset.testid||'').includes('cell-frame'))"
+    "    )){ candidates.push(p); break; }"
+    "    p=p.parentElement;"
+    "  }"
+    "}"
+    # Dedup + score; prefer titled chat rows over Messages hits; skip junk
+    "const seen=new Set(); let best=null; let bestScore=0;"
+    "for(const r of candidates){"
+    "  if(!r||seen.has(r)) continue; seen.add(r);"
+    "  const rect=r.getBoundingClientRect();"
+    "  if(rect.width<80||rect.height<28||rect.y<40) continue;"
+    "  if(rect.x>Math.max(900, (window.innerWidth||1200)*0.55)) continue;"
+    "  const titleEl=r.querySelector('span[title], div[data-testid=\"cell-frame-title\"]');"
+    "  const titleAttr=(titleEl&&titleEl.getAttribute('title'))||r.getAttribute('title')||'';"
+    "  const body=(r.innerText||'').replace(/\\s+/g,' ').trim();"
+    "  let sc=Math.max(scoreText(titleAttr), scoreText(body));"
+    "  if(sc<=0) continue;"
+    # Prefer exact chat-title match (Chats section) over message snippets
+    "  if(titleAttr && scoreText(titleAttr)>=80) sc+=25;"
+    "  if(/\\byesterday\\b|\\btoday\\b|\\d{1,2}:\\d{2}\\s*(am|pm)?/i.test(body) && titleAttr) sc+=5;"
+    "  if(rect.x<700) sc+=5;"
+    "  if(rect.height>=48 && rect.height<=120) sc+=8;"
+    "  if(sc>bestScore){ bestScore=sc; best=r; }"
+    "}"
+    "return best;"
+    "})()"
+)
+
+# When search result matching fails, dump visible left-pane rows for debugging.
+_CONTACT_RESULT_DIAG_EXPR = (
+    "(()=>{"
+    "const pane=document.querySelector('#pane-side')||document.body;"
+    "const rows=[...pane.querySelectorAll("
+    "  'div[role=\"gridcell\"], div[role=\"listitem\"], div[tabindex=\"0\"], "
+    "div[data-testid=\"cell-frame-container\"]')"
+    "].filter(e=>e.offsetParent!==null).slice(0,40);"
+    "return JSON.stringify(rows.map(e=>{"
+    "  const r=e.getBoundingClientRect();"
+    "  const tx=(e.innerText||'').replace(/\\s+/g,' ').trim().slice(0,120);"
+    "  return {role:e.getAttribute('role'), tab:e.getAttribute('tabindex'),"
+    "          testid:e.getAttribute('data-testid'),"
+    "          x:Math.round(r.x), y:Math.round(r.y), h:Math.round(r.height), text:tx};"
+    "}));"
+    "})()"
 )
 # After the chat opens, verify by looking for the OPEN-CHAT header (inside #main).
 # Note: there are multiple <header> elements on the page (sidebar, etc.);
@@ -1353,13 +1453,55 @@ def open_contact_chat(tab):
     )
     time.sleep(0.2)
     tab.insert_text(CONTACT)
-    time.sleep(3.0 if SCHEDULED else 2.0)
+    # Give WhatsApp time to populate search results (can be slow after fresh login).
+    settle = 5.0 if SCHEDULED else 3.5
+    time.sleep(settle)
     actual = tab.eval(
         "const el=document.activeElement;"
         "return el ? (el.value!==undefined?el.value:el.innerText||el.textContent||'') : '';"
     )
     log(f"search box value after typing: {actual!r}")
-    tab.wait(f"!!({S_CONTACT_RESULT})", f"search result for {CONTACT!r}", timeout=25 if SCHEDULED else 15)
+
+    result_timeout = 35 if SCHEDULED else 20
+    try:
+        tab.wait(
+            f"!!({S_CONTACT_RESULT})",
+            f"search result for {CONTACT!r}",
+            timeout=result_timeout,
+            raise_on_timeout=True,
+        )
+    except Exception as exc:
+        log(f"search result not found with primary selector ({exc})")
+        try:
+            diag = tab.eval(_CONTACT_RESULT_DIAG_EXPR)
+            log("--- DIAGNOSTIC: visible left-pane / search rows ---")
+            log(diag or "(none)")
+        except Exception as exc2:
+            log(f"search-result diagnostic dump failed: {exc2}")
+        # One retry: clear, retype, wait again (helps after sync lag).
+        log("retrying chat search once…")
+        try:
+            tab.eval(
+                "const el=document.activeElement;"
+                "if(el && 'value' in el){"
+                "  const proto=Object.getPrototypeOf(el);"
+                "  const desc=Object.getOwnPropertyDescriptor(proto,'value');"
+                "  if(desc&&desc.set){desc.set.call(el,'');"
+                "    el.dispatchEvent(new Event('input',{bubbles:true}));}"
+                "} else if(el){el.innerText='';el.dispatchEvent(new Event('input',{bubbles:true}));}"
+                "return true;"
+            )
+            time.sleep(0.4)
+            tab.insert_text(CONTACT)
+            time.sleep(settle)
+        except Exception as exc3:
+            log(f"search retry retype failed: {exc3}")
+        tab.wait(
+            f"!!({S_CONTACT_RESULT})",
+            f"search result for {CONTACT!r} (retry)",
+            timeout=result_timeout,
+        )
+
     tab.click(S_CONTACT_RESULT, f"open chat: {CONTACT}")
     time.sleep(1.0 if SCHEDULED else 0.6)
     tab.wait(f"!!({S_CHAT_OPEN_HEADER})", f"chat header for {CONTACT!r}", timeout=40 if SCHEDULED else 25)
