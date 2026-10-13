@@ -1,5 +1,5 @@
 ---
-description: Clerk v7+ satellite-domain authentication on Next.js App Router — URL handshake flow, when NOT to enable frontendApiProxy, correct sign-in/sign-up redirect helpers, and FORCE_REDIRECT_URL pitfalls. Applies to apps where one Clerk instance serves a primary domain plus one or more satellite domains (e.g. event-site-manager.com + mosc-temp.com).
+description: Clerk v7+ satellite-domain authentication on Next.js App Router — URL handshake flow, when NOT to enable frontendApiProxy, correct sign-in/sign-up redirect helpers, and FORCE_REDIRECT_URL pitfalls. Applies to apps where one Clerk instance serves a primary domain plus one or more satellite domains (e.g. kluvo.ai + mosc-temp.com).
 globs: src/middleware.ts, src/app/(auth)/sign-in/[[...sign-in]]/page.tsx, src/app/(auth)/sign-up/[[...sign-up]]/page.tsx, src/app/layout.tsx, .env.production
 alwaysApply: true
 ---
@@ -131,8 +131,8 @@ They tell Clerk's `<SignIn>` / `<SignUp>` components: *"after a successful sign-
 
 ```bash
 # ❌ DON'T — points sign-in's after-redirect at sign-in itself; <SignIn /> renders blank
-NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=https://www.event-site-manager.com/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL=https://www.event-site-manager.com/sign-up
+NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=https://www.kluvo.ai/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL=https://www.kluvo.ai/sign-up
 ```
 
 ```bash

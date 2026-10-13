@@ -578,7 +578,7 @@ import Image from 'next/image';
 
 ## **Satellite vs Primary: Sign-In and Sign-Out (Multi-Domain)**
 
-When using Clerk with a **primary domain** (e.g. `event-site-manager.com`) and **satellite domain(s)** (e.g. `mosc-temp.com`), sign-in and sign-out must detect primary vs satellite correctly. If the primary app is misidentified as a satellite (e.g. due to `NEXT_PUBLIC_CLERK_DOMAIN` set to the primary host), the sign-in page can render blank and sign-out can fail or redirect incorrectly.
+When using Clerk with a **primary domain** (e.g. `kluvo.ai`) and **satellite domain(s)** (e.g. `mosc-temp.com`), sign-in and sign-out must detect primary vs satellite correctly. If the primary app is misidentified as a satellite (e.g. due to `NEXT_PUBLIC_CLERK_DOMAIN` set to the primary host), the sign-in page can render blank and sign-out can fail or redirect incorrectly.
 
 ### **Core Rule: Primary-First Detection**
 
@@ -595,7 +595,7 @@ When using Clerk with a **primary domain** (e.g. `event-site-manager.com`) and *
 
 **Primary detection (use this shape)**:
 ```typescript
-const primaryDomain = process.env.NEXT_PUBLIC_PRIMARY_DOMAIN || 'www.event-site-manager.com';
+const primaryDomain = process.env.NEXT_PUBLIC_PRIMARY_DOMAIN || 'www.kluvo.ai';
 const primaryHost = primaryDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
 const isPrimary =
   hostname === primaryHost ||
@@ -644,27 +644,27 @@ if (isSatellite) {
 
 ### **CRITICAL: Primary Domain Must Stay Deployed for Satellite Auth to Work**
 
-The **primary** (e.g. https://www.event-site-manager.com/) must remain deployed. If you remove or undeploy the primary app (e.g. from AWS Amplify), **sign-in and sign-out on the satellite (mosc-temp.com) will break**. This is by design, not a bug.
+The **primary** (e.g. https://www.kluvo.ai/) must remain deployed. If you remove or undeploy the primary app (e.g. from AWS Amplify), **sign-in and sign-out on the satellite (mosc-temp.com) will break**. This is by design, not a bug.
 
 **Why:**
 
 1. **Sign-in (satellite)**  
    - User on mosc-temp.com goes to `/sign-in`.  
    - The sign-in page detects satellite and **redirects** to the primary:  
-     `https://www.event-site-manager.com/sign-in?redirect_url=https://mosc-temp.com`  
+     `https://www.kluvo.ai/sign-in?redirect_url=https://mosc-temp.com`  
    - The **primary** serves the Clerk `<SignIn />` page. After successful sign-in, Clerk redirects the user back to `redirect_url` (the satellite).  
    - If the primary app is gone, that URL returns 404 or an error → sign-in never completes.
 
 2. **Sign-out (satellite)**  
    - User on mosc-temp.com clicks Sign out.  
    - The Header detects satellite and **redirects** to the primary:  
-     `https://www.event-site-manager.com/auth/signout-redirect?redirect_url=https://mosc-temp.com`  
+     `https://www.kluvo.ai/auth/signout-redirect?redirect_url=https://mosc-temp.com`  
    - The **primary’s** `/auth/signout-redirect` page runs: it calls Clerk `signOut()` then redirects the user back to the satellite with `?clerk_signout=true` so the satellite can clear local state.  
    - If the primary app is gone, that URL returns 404 → sign-out never runs and the satellite cannot clear the session properly.
 
 So the authentication mechanism is **not** different on the two domains: the **satellite depends on the primary** to host the actual sign-in UI and the sign-out redirect handler. Same Clerk credentials on both sides only mean they share the same Clerk application; the **primary app must be running** for satellite redirects to succeed.
 
-**Summary:** Do not delete or undeploy the primary (event-site-manager.com). Keep both Amplify apps (primary + satellite) deployed. If you need only one public-facing site, you can point users to the satellite and keep the primary as a “hidden” auth backend, but the primary deployment must stay live.
+**Summary:** Do not delete or undeploy the primary (kluvo.ai). Keep both Amplify apps (primary + satellite) deployed. If you need only one public-facing site, you can point users to the satellite and keep the primary as a “hidden” auth backend, but the primary deployment must stay live.
 
 ### **Anti-Pattern: Using NEXT_PUBLIC_CLERK_DOMAIN for "Am I Satellite?"**
 
@@ -672,7 +672,7 @@ So the authentication mechanism is **not** different on the two domains: the **s
 // ❌ DON'T: Primary can be misidentified as satellite if env is wrong
 const satelliteDomain = process.env.NEXT_PUBLIC_CLERK_DOMAIN || 'mosc-temp.com';
 if (hostname.includes(satelliteDomain.replace('www.', ''))) {
-  setShouldRedirect(true);  // On primary, if CLERK_DOMAIN=event-site-manager.com, this runs!
+  setShouldRedirect(true);  // On primary, if CLERK_DOMAIN=kluvo.ai, this runs!
 }
 ```
 
@@ -680,10 +680,10 @@ if (hostname.includes(satelliteDomain.replace('www.', ''))) {
 
 ### **Satellite: “Email Already Taken” and User in Database but Not in Clerk Dashboard**
 
-**Scenario**: Same email exists in your `user_profile` table and you can log in on the **primary** (e.g. event-site-manager.com) with that email, but (1) on the **satellite** (mosc-temp.com) when you try to **register** you see “email already taken”, and (2) that user does not appear in Clerk Dashboard’s user list.
+**Scenario**: Same email exists in your `user_profile` table and you can log in on the **primary** (e.g. kluvo.ai) with that email, but (1) on the **satellite** (mosc-temp.com) when you try to **register** you see “email already taken”, and (2) that user does not appear in Clerk Dashboard’s user list.
 
 **Is it because the same code runs on both domains?**  
-**No.** Running the same Next.js app on both the primary (event-site-manager.com) and the satellite (mosc-temp.com) is the intended Clerk satellite setup. It does not conflict with Clerk.
+**No.** Running the same Next.js app on both the primary (kluvo.ai) and the satellite (mosc-temp.com) is the intended Clerk satellite setup. It does not conflict with Clerk.
 
 **Why “email already taken” on the satellite when registering?**
 
@@ -698,7 +698,7 @@ if (hostname.includes(satelliteDomain.replace('www.', ''))) {
 
 - If you can **log in** on the primary with that email, Clerk **does** have that user. Login cannot succeed without a Clerk user.
 - Typical causes for not seeing them in the Dashboard: (1) viewing a **different** Clerk application (e.g. Development vs Production), (2) viewing a different **environment** (e.g. Production vs Development), or (3) filtering/search in the Dashboard.
-- Check the **same** Clerk application and **Production** environment that event-site-manager.com uses; the user should appear there.
+- Check the **same** Clerk application and **Production** environment that kluvo.ai uses; the user should appear there.
 
 **Summary**
 
@@ -992,7 +992,7 @@ Does the route call auth() or currentUser() in server components?
 
 ---
 
-### **Sign-In Page Blank on Primary (event-site-manager.com)**
+### **Sign-In Page Blank on Primary (kluvo.ai)**
 **Cause**: Primary domain was treated as satellite (e.g. `NEXT_PUBLIC_CLERK_DOMAIN` set to primary host), so the page redirected to itself or showed "Redirecting..." instead of Clerk `<SignIn />`.
 
 **Fix**: Use primary-first detection in sign-in page; only redirect when `hostname.includes('mosc-temp.com')`. See "Satellite vs Primary: Sign-In and Sign-Out" above.
